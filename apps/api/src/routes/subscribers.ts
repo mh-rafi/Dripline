@@ -4,17 +4,25 @@ import type { DB } from "../db/kysely.js";
 import {
   addTag,
   addToList,
+  addToListForImport,
   blocklistSubscriber,
   getSubscriberOrThrow,
   removeFromList,
   removeTag,
+  unblocklistSubscriber,
 } from "../services/subscribers.js";
 
 const CreateSubscriber = z.object({
   email: z.string().email(),
   name: z.string().optional(),
+  status: z.enum(["enabled", "blocklisted"]).default("enabled"),
   attribs: z.record(z.unknown()).optional(),
   list_ids: z.array(z.number().int()).optional(),
+  // Matches listmonk's "Preconfirm subscriptions" checkbox: mark all of the
+  // given lists as 'confirmed' immediately (bypassing the usual
+  // single-vs-double-opt-in default) instead of sending/needing a
+  // confirmation. Useful for known-good imports of already-consented lists.
+  preconfirm: z.boolean().default(false),
 });
 const UpdateSubscriber = z.object({
   name: z.string().optional(),
@@ -65,7 +73,7 @@ export default async function subscriberRoutes(app: FastifyInstance, opts: { db:
     const lists = await db
       .selectFrom("subscriber_lists")
       .innerJoin("lists", "lists.id", "subscriber_lists.list_id")
-      .select(["lists.id", "lists.name", "subscriber_lists.status"])
+      .select(["lists.id", "lists.name", "lists.optin", "subscriber_lists.status"])
       .where("subscriber_id", "=", id)
       .execute();
     return { ...subscriber, lists };
@@ -73,7 +81,7 @@ export default async function subscriberRoutes(app: FastifyInstance, opts: { db:
 
   app.post("/api/v1/subscribers", async (req, reply) => {
     const body = CreateSubscriber.parse(req.body);
-    const subscriber = await db
+    let subscriber = await db
       .insertInto("subscribers")
       .values({ email: body.email, name: body.name ?? "", attribs: body.attribs ?? {} })
       .onConflict((oc) => oc.column("email").doUpdateSet({ name: body.name ?? "" }))
@@ -81,8 +89,14 @@ export default async function subscriberRoutes(app: FastifyInstance, opts: { db:
       .executeTakeFirstOrThrow();
 
     for (const listId of body.list_ids ?? []) {
-      await addToList(db, subscriber.id, listId);
+      await addToList(db, subscriber.id, listId, body.preconfirm ? "confirmed" : undefined);
     }
+
+    if (body.status === "blocklisted") {
+      await blocklistSubscriber(db, subscriber.id);
+      subscriber = await getSubscriberOrThrow(db, subscriber.id);
+    }
+
     reply.code(201);
     return subscriber;
   });
@@ -114,12 +128,21 @@ export default async function subscriberRoutes(app: FastifyInstance, opts: { db:
     return { ok: true };
   });
 
+  app.post("/api/v1/subscribers/:id/unblocklist", async (req) => {
+    const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
+    await unblocklistSubscriber(db, id);
+    return { ok: true };
+  });
+
   app.put("/api/v1/subscribers/:id/lists/:listId", async (req) => {
     const { id, listId } = z
       .object({ id: z.coerce.number(), listId: z.coerce.number() })
       .parse(req.params);
+    // No default here -- omitting `status` lets addToList pick the sensible
+    // one for the list's opt-in type (confirmed for single, unconfirmed for
+    // double), rather than always forcing "unconfirmed".
     const { status } = z
-      .object({ status: z.enum(["unconfirmed", "confirmed"]).default("unconfirmed") })
+      .object({ status: z.enum(["unconfirmed", "confirmed"]).optional() })
       .parse(req.body ?? {});
     await addToList(db, id, listId, status);
     return { ok: true };
@@ -145,29 +168,70 @@ export default async function subscriberRoutes(app: FastifyInstance, opts: { db:
     return { ok: true };
   });
 
+  const ImportBody = z.object({
+    mode: z.enum(["subscribe", "blocklist"]).default("subscribe"),
+    // Only applies in "subscribe" mode -- the status given to every list
+    // membership created by this import, overriding the usual
+    // opt-in-type default (see addToListForImport).
+    status: z.enum(["unconfirmed", "confirmed"]).default("confirmed"),
+    list_ids: z.array(z.number().int()).default([]),
+    overwrite_user_info: z.boolean().default(false),
+    overwrite_subscription_status: z.boolean().default(false),
+    subscribers: z.array(
+      z.object({
+        email: z.string().email(),
+        name: z.string().optional(),
+        attribs: z.record(z.unknown()).optional(),
+      }),
+    ),
+  });
+
   app.post("/api/v1/subscribers/import", async (req) => {
-    const body = z
-      .object({
-        list_ids: z.array(z.number().int()).default([]),
-        subscribers: z.array(
-          z.object({
-            email: z.string().email(),
-            name: z.string().optional(),
-            attribs: z.record(z.unknown()).optional(),
-          }),
-        ),
-      })
-      .parse(req.body);
+    const body = ImportBody.parse(req.body);
 
     let imported = 0;
     for (const s of body.subscribers) {
-      const row = await db
-        .insertInto("subscribers")
-        .values({ email: s.email, name: s.name ?? "", attribs: s.attribs ?? {} })
-        .onConflict((oc) => oc.column("email").doUpdateSet({ name: s.name ?? "" }))
-        .returning("id")
-        .executeTakeFirstOrThrow();
-      for (const listId of body.list_ids) await addToList(db, row.id, listId);
+      const existing = await db
+        .selectFrom("subscribers")
+        .select("id")
+        .where("email", "=", s.email)
+        .executeTakeFirst();
+
+      let subscriberId: number;
+      if (existing) {
+        subscriberId = existing.id;
+        if (body.overwrite_user_info) {
+          await db
+            .updateTable("subscribers")
+            .set({
+              ...(s.name !== undefined ? { name: s.name } : {}),
+              ...(s.attribs ? { attribs: s.attribs } : {}),
+            })
+            .where("id", "=", subscriberId)
+            .execute();
+        }
+      } else {
+        const row = await db
+          .insertInto("subscribers")
+          .values({ email: s.email, name: s.name ?? "", attribs: s.attribs ?? {} })
+          .returning("id")
+          .executeTakeFirstOrThrow();
+        subscriberId = row.id;
+      }
+
+      if (body.mode === "blocklist") {
+        await blocklistSubscriber(db, subscriberId);
+      } else {
+        for (const listId of body.list_ids) {
+          await addToListForImport(
+            db,
+            subscriberId,
+            listId,
+            body.status,
+            body.overwrite_subscription_status,
+          );
+        }
+      }
       imported++;
     }
     return { imported };

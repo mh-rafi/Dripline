@@ -4,7 +4,7 @@ import type { Config } from "../config.js";
 import { NotFoundError } from "../lib/errors.js";
 import { WorkflowSteps, evaluateCondition } from "../lib/workflowSteps.js";
 import { renderTemplate } from "../lib/template.js";
-import { sendWithFailover } from "./providerRouter.js";
+import { getWorkflowConnectionChain, sendWithChain } from "./connections.js";
 
 export async function getWorkflowOrThrow(db: DB, id: number) {
   const workflow = await db
@@ -196,11 +196,27 @@ export async function processEnrollmentStep(
         Campaign: { ID: 0, UUID: workflow.uuid, Name: workflow.name, Subject: step.subject },
         UnsubscribeURL: `${config.appUrl}/api/v1/workflows/${workflow.id}/unsubscribe/${subscriber.uuid}`,
       };
-      await sendWithFailover(db, {
+      const chain = await getWorkflowConnectionChain(
+        db,
+        step.connection_id,
+        step.fallback_connection_ids,
+      );
+      const result = await sendWithChain(db, chain, {
         to: subscriber.email,
         subject: renderTemplate(step.subject, context),
         html: renderTemplate(step.body, context),
       });
+      if (!result.ok && result.error === "rate_limited") {
+        // Not a failure -- retry this same step next tick instead of silently
+        // dropping the email and moving on.
+        nextStep = enrollment.current_step;
+        break;
+      }
+      if (!result.ok) {
+        console.error(
+          `workflow ${workflow.id} enrollment ${enrollmentId}: send_email step failed: ${result.error}`,
+        );
+      }
       break;
     }
     case "add_tag": {
@@ -214,8 +230,11 @@ export async function processEnrollmentStep(
       break;
     }
     case "add_list": {
+      // No explicit status forced -- a workflow shouldn't be able to bypass
+      // double opt-in consent by auto-confirming; addToList defaults
+      // correctly per the list's opt-in type.
       const { addToList } = await import("./subscribers.js");
-      await addToList(db, subscriber.id, step.list_id, "confirmed");
+      await addToList(db, subscriber.id, step.list_id);
       break;
     }
     case "remove_list": {

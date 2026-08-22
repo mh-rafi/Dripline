@@ -1,7 +1,12 @@
-import { sql } from "kysely";
+import { randomUUID } from "node:crypto";
+import { sql, type Selectable } from "kysely";
 import type { DB } from "../db/kysely.js";
-import type { CampaignStatus } from "../db/types.js";
+import type { Config } from "../config.js";
+import type { CampaignContentType, CampaignStatus, SubscribersTable } from "../db/types.js";
 import { BadRequestError, NotFoundError } from "../lib/errors.js";
+import { markdownToHtml } from "../lib/markdown.js";
+import { renderCampaignEmail } from "./mailer.js";
+import { getConnectionChain, sendWithChain } from "./connections.js";
 
 const ALLOWED_TRANSITIONS: Record<CampaignStatus, CampaignStatus[]> = {
   draft: ["scheduled", "running", "cancelled"],
@@ -68,6 +73,15 @@ export async function startCampaign(db: DB, id: number) {
     .executeTakeFirst();
   if (!listCount || Number(listCount.count) === 0) {
     throw new BadRequestError("campaign has no lists attached");
+  }
+
+  const connCount = await db
+    .selectFrom("campaign_connections")
+    .select(db.fn.countAll().as("count"))
+    .where("campaign_id", "=", id)
+    .executeTakeFirst();
+  if (!connCount || Number(connCount.count) === 0) {
+    throw new BadRequestError("campaign has no sending connections attached");
   }
 
   await enqueueEligibleRecipients(db, id);
@@ -137,4 +151,93 @@ export async function getCampaignProgress(db: DB, campaignId: number): Promise<C
     progress.total += count;
   }
   return progress;
+}
+
+export interface TestEmailOverrides {
+  name?: string;
+  subject?: string;
+  body?: string;
+  body_source?: string | null;
+  content_type?: CampaignContentType;
+  from_email?: string | null;
+  template_id?: number | null;
+}
+
+/**
+ * Sends a one-off test email using the campaign's *saved connections* but
+ * whatever body/subject/content_type is passed in -- so a test can be sent
+ * against in-progress, unsaved edits, matching listmonk's test-send model.
+ * Not part of the campaign_emails dispatch pipeline: no row is created, and
+ * this doesn't count toward `to_send`/`sent`. It does still go through the
+ * connection's own rate limit (sendWithChain -> sendThroughConnection), same
+ * as a real send.
+ */
+export async function sendTestEmail(
+  db: DB,
+  config: Config,
+  campaignId: number,
+  toEmail: string,
+  overrides: TestEmailOverrides,
+): Promise<{ ok: boolean; error: string | null }> {
+  const saved = await getCampaignOrThrow(db, campaignId);
+
+  const campaign = {
+    ...saved,
+    subject: overrides.subject ?? saved.subject,
+    body: overrides.body ?? saved.body,
+    body_source: overrides.body_source !== undefined ? overrides.body_source : saved.body_source,
+    content_type: overrides.content_type ?? saved.content_type,
+    from_email: overrides.from_email !== undefined ? overrides.from_email : saved.from_email,
+    template_id: overrides.template_id !== undefined ? overrides.template_id : saved.template_id,
+  };
+
+  if (campaign.content_type === "markdown") {
+    campaign.body = markdownToHtml(campaign.body);
+  }
+
+  const template = campaign.template_id
+    ? await db
+        .selectFrom("templates")
+        .selectAll()
+        .where("id", "=", campaign.template_id)
+        .executeTakeFirst()
+    : null;
+
+  const chain = await getConnectionChain(db, campaignId);
+  if (chain.length === 0) {
+    return { ok: false, error: "campaign has no sending connections attached" };
+  }
+
+  // Use the real subscriber if the test address happens to be one (so merge
+  // fields preview with real data), otherwise a synthetic, non-persisted
+  // stand-in -- test sends should work for any address, not just subscribers.
+  const existing = await db
+    .selectFrom("subscribers")
+    .selectAll()
+    .where("email", "=", toEmail)
+    .executeTakeFirst();
+  // Cast: Kysely's `Generated<Timestamp>` double-wraps ColumnType (Timestamp is
+  // itself a ColumnType), which its own `Selectable<>` utility only unwraps one
+  // level -- harmless here since renderCampaignEmail never reads these fields.
+  const synthetic = {
+    id: 0,
+    uuid: randomUUID(),
+    email: toEmail,
+    name: overrides.name ?? "Test Subscriber",
+    attribs: {},
+    status: "enabled",
+    created_at: new Date(),
+    updated_at: new Date(),
+  } as unknown as Selectable<SubscribersTable>;
+  const subscriber = existing ?? synthetic;
+
+  const rendered = await renderCampaignEmail(db, config, campaign, template ?? null, subscriber);
+  const result = await sendWithChain(db, chain, {
+    to: toEmail,
+    subject: rendered.subject,
+    html: rendered.html,
+    fromOverride: campaign.from_email,
+  });
+
+  return { ok: result.ok, error: result.error };
 }

@@ -65,6 +65,20 @@ export async function renderCampaignEmail(
   };
 
   const body = template ? template.body.replace("{{ Body }}", campaign.body) : campaign.body;
+
+  // Plain-text campaigns skip HTML-specific processing entirely -- no open
+  // pixel, no link-tracking rewrite (there's nothing resembling <a href> to
+  // find anyway), and merge fields are substituted directly against the
+  // literal text. The result is escaped and wrapped in <pre> so the single
+  // HTML part renders as plain text rather than being interpreted as markup
+  // (a genuine multipart text/plain part is a possible future improvement --
+  // see docs/plan/DEVELOPMENT_PLAN.md).
+  if (campaign.content_type === "plain") {
+    const text = renderTemplate(body, context);
+    const html = `<pre style="white-space:pre-wrap;font-family:inherit;margin:0">${escapeHtml(text)}</pre>`;
+    return { subject: renderTemplate(campaign.subject, context), html };
+  }
+
   let html = renderTemplate(body, context);
 
   // The unsubscribe link is rendered before extraction/tracking so it can be
@@ -87,4 +101,12 @@ export async function renderCampaignEmail(
   html = appendOpenPixel(html, openPixelUrl(config, subscriber, campaign));
 
   return { subject: renderTemplate(campaign.subject, context), html };
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }

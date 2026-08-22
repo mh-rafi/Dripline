@@ -4,10 +4,11 @@ import Layout from "./components/Layout.js";
 import Login from "./pages/Login.js";
 import Dashboard from "./pages/Dashboard.js";
 import Subscribers from "./pages/Subscribers.js";
+import SubscriberImport from "./pages/SubscriberImport.js";
 import SubscriberDetail from "./pages/SubscriberDetail.js";
 import Lists from "./pages/Lists.js";
 import Templates from "./pages/Templates.js";
-import Providers from "./pages/Providers.js";
+import Connections from "./pages/Connections.js";
 import Campaigns from "./pages/Campaigns.js";
 import CampaignNew from "./pages/CampaignNew.js";
 import CampaignDetail from "./pages/CampaignDetail.js";
@@ -35,10 +36,11 @@ export default function App() {
       >
         <Route path="/" element={<Dashboard />} />
         <Route path="/subscribers" element={<Subscribers />} />
+        <Route path="/subscribers/import" element={<SubscriberImport />} />
         <Route path="/subscribers/:id" element={<SubscriberDetail />} />
         <Route path="/lists" element={<Lists />} />
         <Route path="/templates" element={<Templates />} />
-        <Route path="/providers" element={<Providers />} />
+        <Route path="/connections" element={<Connections />} />
         <Route path="/campaigns" element={<Campaigns />} />
         <Route path="/campaigns/new" element={<CampaignNew />} />
         <Route path="/campaigns/:id" element={<CampaignDetail />} />

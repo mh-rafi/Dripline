@@ -15,12 +15,21 @@ interface Enrollment {
 const STEP_HELP = `Steps are executed in order. Example:
 [
   { "type": "delay", "duration_seconds": 86400 },
-  { "type": "send_email", "subject": "Welcome!", "body": "<p>Hi {{ Subscriber.Name }}</p>" },
+  {
+    "type": "send_email",
+    "subject": "Welcome!",
+    "body": "<p>Hi {{ Subscriber.Name }}</p>",
+    "connection_id": 1,
+    "fallback_connection_ids": [2, 3]
+  },
   { "type": "add_tag", "tag": "onboarded" }
 ]
 
 Available step types: delay, send_email, add_tag, remove_tag, add_list,
-remove_list, condition, webhook_out.`;
+remove_list, condition, webhook_out.
+
+send_email accepts connection_id (primary) and fallback_connection_ids
+(ordered fallbacks). If omitted, the first enabled connection is used.`;
 
 export default function WorkflowDetail() {
   const { id } = useParams();

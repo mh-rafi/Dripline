@@ -131,7 +131,8 @@ button:hover,
   background: var(--accent-hover);
 }
 
-button.secondary {
+button.secondary,
+.btn.secondary {
   background: transparent;
   border: 1px solid var(--border);
   color: var(--text);
@@ -201,8 +202,17 @@ label {
   background: #1e3a8a;
   color: #bfdbfe;
 }
+.badge.confirmed {
+  background: #14532d;
+  color: #bbf7d0;
+}
+.badge.unconfirmed {
+  background: #78350f;
+  color: #fde68a;
+}
 .badge.cancelled,
-.badge.blocklisted {
+.badge.blocklisted,
+.badge.unsubscribed {
   background: #450a0a;
   color: #fecaca;
 }
@@ -251,6 +261,49 @@ label {
 }
 .progress-bar .pending {
   background: var(--border);
+}
+
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 40px;
+  height: 22px;
+  flex-shrink: 0;
+}
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.switch .slider {
+  position: absolute;
+  inset: 0;
+  background: var(--border);
+  border-radius: 999px;
+  transition: 0.15s;
+  cursor: pointer;
+}
+.switch .slider::before {
+  content: "";
+  position: absolute;
+  height: 16px;
+  width: 16px;
+  left: 3px;
+  top: 3px;
+  background: var(--text);
+  border-radius: 50%;
+  transition: 0.15s;
+}
+.switch input:checked + .slider {
+  background: var(--accent);
+}
+.switch input:checked + .slider::before {
+  transform: translateX(18px);
+  background: white;
+}
+.switch input:disabled + .slider {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 code,

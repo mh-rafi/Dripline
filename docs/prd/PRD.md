@@ -83,7 +83,12 @@ Separately, listmonk does not support:
 ### 6.1 Carried over from listmonk (parity)
 
 - Subscribers, lists (single/double opt-in), tags/attributes.
-- Broadcast campaigns with rich-text/plain templates, template inheritance.
+- Broadcast campaigns with 5 body editing modes, matching listmonk's set:
+  richtext (TinyMCE), raw HTML and markdown (CodeMirror, markdown pairs with
+  a live preview), plain text, and a drag-and-drop visual builder (GrapesJS +
+  `grapesjs-preset-newsletter` -- chosen over vendoring listmonk's React+MUI
+  usewaypoint/email-builder-js to avoid a UI-framework dependency; see
+  Development Plan Phase 8). Template inheritance via `{{ Body }}` wrapping.
 - Public HTTP API for external services to create/query subscribers, trigger sends.
 - Per-campaign message rate limiting and sliding-window throttling.
 - Bounce handling (webhook + mailbox scan), blocklisting.

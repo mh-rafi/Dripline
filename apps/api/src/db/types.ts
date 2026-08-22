@@ -60,23 +60,42 @@ export interface ApiKeysTable {
   created_at: Generated<Timestamp>;
 }
 
-export type ProviderType = "smtp";
+export type ConnectionType = "smtp" | "ses";
 
-export interface SmtpProviderConfig {
+export type TlsMode = "none" | "starttls" | "tls";
+export type AuthMethod = "none" | "login" | "plain" | "cram-md5";
+
+export interface SmtpConnectionConfig {
   host: string;
   port: number;
-  secure?: boolean;
+  tls_mode: TlsMode;
+  tls_skip_verify: boolean;
+  auth_method: AuthMethod;
   username?: string;
   password?: string;
 }
 
-export interface ProvidersTable {
+export interface SesConnectionConfig {
+  region: string;
+  access_key_id?: string;
+  secret_access_key?: string;
+  /** Use the ambient IAM/instance role instead of static keys. */
+  use_iam_role?: boolean;
+}
+
+export type ConnectionConfig = SmtpConnectionConfig | SesConnectionConfig;
+
+export interface ConnectionsTable {
   id: Generated<number>;
   name: string;
-  type: Generated<ProviderType>;
-  config: SmtpProviderConfig;
+  type: Generated<ConnectionType>;
+  config: ConnectionConfig;
   from_email: string;
-  weight: Generated<number>;
+  from_name: Generated<string>;
+  rate_limit_count: number | null;
+  rate_limit_duration_seconds: number | null;
+  window_start: Timestamp | null;
+  window_count: Generated<number>;
   enabled: Generated<boolean>;
   max_errors: Generated<number>;
   error_count: Generated<number>;
@@ -85,8 +104,17 @@ export interface ProvidersTable {
   updated_at: Generated<Timestamp>;
 }
 
+export interface CampaignConnectionsTable {
+  campaign_id: number;
+  connection_id: number;
+  priority: Generated<number>;
+  created_at: Generated<Timestamp>;
+}
+
 export type CampaignStatus =
   "draft" | "scheduled" | "running" | "paused" | "finished" | "cancelled";
+
+export type CampaignContentType = "richtext" | "html" | "plain" | "markdown" | "visual";
 
 export interface CampaignsTable {
   id: Generated<number>;
@@ -96,9 +124,19 @@ export interface CampaignsTable {
   from_email: string | null;
   template_id: number | null;
   body: Generated<string>;
+  /** Original editor source (markdown text, visual builder JSON, or a mirror
+   * of `body` for richtext/html/plain). `body` is always the final HTML. */
+  body_source: string | null;
+  content_type: Generated<CampaignContentType>;
   status: Generated<CampaignStatus>;
   send_at: Timestamp | null;
-  messages_per_minute: Generated<number>;
+  /** Optional secondary throttle: at most `rate_limit_count` sends per
+   * `rate_limit_duration_seconds`, on top of the connection's own (primary)
+   * rate limit. Null means no additional campaign-level cap. */
+  rate_limit_count: number | null;
+  rate_limit_duration_seconds: number | null;
+  window_start: Timestamp | null;
+  window_count: Generated<number>;
   max_send_errors: Generated<number>;
   to_send: Generated<number>;
   sent: Generated<number>;
@@ -121,7 +159,7 @@ export interface CampaignEmailsTable {
   campaign_id: number;
   subscriber_id: number;
   status: Generated<CampaignEmailStatus>;
-  provider_id: number | null;
+  connection_id: number | null;
   attempts: Generated<number>;
   error: string | null;
   sent_at: Timestamp | null;
@@ -212,9 +250,10 @@ export interface Database {
   templates: TemplatesTable;
   users: UsersTable;
   api_keys: ApiKeysTable;
-  providers: ProvidersTable;
+  connections: ConnectionsTable;
   campaigns: CampaignsTable;
   campaign_lists: CampaignListsTable;
+  campaign_connections: CampaignConnectionsTable;
   campaign_emails: CampaignEmailsTable;
   campaign_views: CampaignViewsTable;
   links: LinksTable;

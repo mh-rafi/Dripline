@@ -3,11 +3,16 @@ import type PgBoss from "pg-boss";
 import type { DB } from "../db/kysely.js";
 import type { Config } from "../config.js";
 import { mapLimit } from "../lib/concurrency.js";
+import { markdownToHtml } from "../lib/markdown.js";
 import { renderCampaignEmail } from "../services/mailer.js";
-import { sendWithFailover } from "../services/providerRouter.js";
+import { getConnectionChain, sendWithChain } from "../services/connections.js";
+import { reserveCampaignSendSlots } from "../services/rateLimiter.js";
 import { QUEUES } from "./boss.js";
 
 const SEND_CONCURRENCY = 5;
+// Per-tick ceiling when a campaign has no rate_limit_count of its own -- the
+// connection's own (primary) rate limit is still what actually gates delivery.
+const MAX_CLAIM_PER_TICK = 1000;
 
 interface DispatchJob {
   campaignId: number;
@@ -73,6 +78,16 @@ export function registerCampaignDispatchWorker(
       .executeTakeFirst();
     if (!campaign || campaign.status !== "running") return;
 
+    // Markdown is converted to HTML once per batch (not per recipient) --
+    // it's subscriber-independent, and this happens *before* the per-subscriber
+    // merge-field render so `{{ Subscriber.Name }}` written inside markdown
+    // text survives conversion untouched and still gets substituted below.
+    // richtext/html/visual already store final HTML in `body`; plain is sent
+    // as-is.
+    if (campaign.content_type === "markdown") {
+      campaign.body = markdownToHtml(campaign.body);
+    }
+
     const template = campaign.template_id
       ? await db
           .selectFrom("templates")
@@ -81,7 +96,22 @@ export function registerCampaignDispatchWorker(
           .executeTakeFirst()
       : null;
 
-    const batch = await claimBatch(db, campaignId, campaign.messages_per_minute);
+    // Resolve this campaign's explicit connection chain (primary -> fallbacks).
+    // If it has none configured (e.g. all its connections were deleted), there's
+    // nothing to send through -- leave recipients pending and stop this tick.
+    const chain = await getConnectionChain(db, campaignId);
+    if (chain.length === 0) {
+      await finalizeIfExhausted(db, campaignId);
+      return;
+    }
+
+    // The campaign throttle is a *secondary*, optional cap -- reserved as a
+    // fixed-window slot count so "1 per 5 minutes" works correctly even
+    // though this tick runs every minute (most ticks reserve 0 slots and
+    // claim nothing). The connection's own rate limit, enforced per-send
+    // inside sendWithChain, is the authoritative, globally-shared one.
+    const slots = await reserveCampaignSendSlots(db, campaignId, MAX_CLAIM_PER_TICK);
+    const batch = slots > 0 ? await claimBatch(db, campaignId, slots) : [];
     if (batch.length === 0) {
       await finalizeIfExhausted(db, campaignId);
       return;
@@ -109,18 +139,29 @@ export function registerCampaignDispatchWorker(
         template ?? null,
         subscriber,
       );
-      const result = await sendWithFailover(db, {
+      const result = await sendWithChain(db, chain, {
         to: subscriber.email,
         subject: rendered.subject,
         html: rendered.html,
         fromOverride: campaign.from_email,
       });
 
+      // A rate-limited send is not a delivery failure: revert the row to
+      // pending so the next tick reclaims it, without burning a retry attempt.
+      if (!result.ok && result.error === "rate_limited") {
+        await db
+          .updateTable("campaign_emails")
+          .set({ status: "pending", error: null })
+          .where("id", "=", row.id)
+          .execute();
+        return;
+      }
+
       await db
         .updateTable("campaign_emails")
         .set({
           status: result.ok ? "sent" : "failed",
-          provider_id: result.providerId,
+          connection_id: result.connectionId,
           error: result.error,
           sent_at: result.ok ? new Date() : null,
           attempts: sql`attempts + 1`,

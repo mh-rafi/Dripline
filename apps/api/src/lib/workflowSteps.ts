@@ -9,6 +9,10 @@ const SendEmailStep = z.object({
   subject: z.string(),
   body: z.string(),
   template_id: z.number().int().optional(),
+  /** Primary connection this step sends through. */
+  connection_id: z.number().int().optional(),
+  /** Optional ordered fallback connections (primary first, then these). */
+  fallback_connection_ids: z.array(z.number().int()).optional(),
 });
 const AddTagStep = z.object({ type: z.literal("add_tag"), tag: z.string() });
 const RemoveTagStep = z.object({ type: z.literal("remove_tag"), tag: z.string() });

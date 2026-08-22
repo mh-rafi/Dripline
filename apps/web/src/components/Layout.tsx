@@ -8,7 +8,7 @@ const links = [
   { to: "/templates", label: "Templates" },
   { to: "/campaigns", label: "Campaigns" },
   { to: "/workflows", label: "Workflows" },
-  { to: "/providers", label: "Providers" },
+  { to: "/connections", label: "Connections" },
   { to: "/settings", label: "Settings" },
 ];
 
