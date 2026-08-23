@@ -56,6 +56,7 @@ const CreateConnection = z
     max_errors: z.number().int().positive().default(20),
     rate_limit_count: z.number().int().positive().nullish(),
     rate_limit_duration_seconds: z.number().int().positive().nullish(),
+    list_unsubscribe_header: z.boolean().default(true),
     config: z.unknown(),
   })
   .superRefine((body, ctx) => {
@@ -74,6 +75,7 @@ const UpdateConnection = z.object({
   max_errors: z.number().int().positive().optional(),
   rate_limit_count: z.number().int().positive().nullish(),
   rate_limit_duration_seconds: z.number().int().positive().nullish(),
+  list_unsubscribe_header: z.boolean().optional(),
   config: z.unknown().optional(),
 });
 
@@ -97,6 +99,7 @@ type ConnectionRow = {
   max_errors: number;
   error_count: number;
   disabled_reason: string | null;
+  list_unsubscribe_header: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -173,6 +176,7 @@ export default async function connectionRoutes(app: FastifyInstance, opts: { db:
         max_errors: body.max_errors,
         rate_limit_count: body.rate_limit_count ?? null,
         rate_limit_duration_seconds: body.rate_limit_duration_seconds ?? null,
+        list_unsubscribe_header: body.list_unsubscribe_header,
       })
       .returningAll()
       .executeTakeFirstOrThrow();
@@ -200,6 +204,8 @@ export default async function connectionRoutes(app: FastifyInstance, opts: { db:
     if (body.rate_limit_count !== undefined) set.rate_limit_count = body.rate_limit_count;
     if (body.rate_limit_duration_seconds !== undefined)
       set.rate_limit_duration_seconds = body.rate_limit_duration_seconds;
+    if (body.list_unsubscribe_header !== undefined)
+      set.list_unsubscribe_header = body.list_unsubscribe_header;
 
     if (body.config !== undefined) {
       const merged = mergeConfig(existing as unknown as ConnectionRow, body.config);

@@ -144,6 +144,7 @@ export function registerCampaignDispatchWorker(
         subject: rendered.subject,
         html: rendered.html,
         fromOverride: campaign.from_email,
+        unsubscribeUrl: rendered.unsubscribeUrl,
       });
 
       // A rate-limited send is not a delivery failure: revert the row to

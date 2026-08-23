@@ -60,6 +60,7 @@ export interface Connection {
   max_errors: number;
   error_count: number;
   disabled_reason: string | null;
+  list_unsubscribe_header: boolean;
   config: ConnectionConfig & Record<string, unknown>;
 }
 

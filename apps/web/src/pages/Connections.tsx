@@ -25,6 +25,7 @@ interface FormState {
   use_iam_role: boolean;
   rate_limit_count: string;
   rate_limit_duration_seconds: number | null;
+  list_unsubscribe_header: boolean;
 }
 
 const EMPTY_FORM: FormState = {
@@ -45,6 +46,7 @@ const EMPTY_FORM: FormState = {
   use_iam_role: false,
   rate_limit_count: "",
   rate_limit_duration_seconds: null,
+  list_unsubscribe_header: true,
 };
 
 function formFromConnection(c: Connection): FormState {
@@ -68,6 +70,7 @@ function formFromConnection(c: Connection): FormState {
     use_iam_role: (cfg.use_iam_role as boolean) ?? false,
     rate_limit_count: c.rate_limit_count ? String(c.rate_limit_count) : "",
     rate_limit_duration_seconds: c.rate_limit_duration_seconds ?? null,
+    list_unsubscribe_header: c.list_unsubscribe_header,
   };
 }
 
@@ -178,6 +181,7 @@ export default function Connections() {
           from_name: form.from_name || undefined,
           rate_limit_count,
           rate_limit_duration_seconds,
+          list_unsubscribe_header: form.list_unsubscribe_header,
           config,
         });
       } else {
@@ -188,6 +192,7 @@ export default function Connections() {
           from_name: form.from_name || undefined,
           rate_limit_count,
           rate_limit_duration_seconds,
+          list_unsubscribe_header: form.list_unsubscribe_header,
           config,
         });
       }
@@ -416,6 +421,24 @@ export default function Connections() {
           <p className="muted" style={{ fontSize: 12 }}>
             The rate limit is enforced globally across every campaign/workflow using this
             connection. Optional campaign throttling can only slow a send down further.
+          </p>
+
+          <label style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 16 }}>
+            <span className="switch">
+              <input
+                type="checkbox"
+                checked={form.list_unsubscribe_header}
+                onChange={(e) => set("list_unsubscribe_header", e.target.checked)}
+              />
+              <span className="slider" />
+            </span>
+            Send List-Unsubscribe header
+          </label>
+          <p className="muted" style={{ fontSize: 12 }}>
+            Adds a one-click unsubscribe header to every email sent through this connection, on top
+            of the unsubscribe link in the body. Improves inbox placement and is required by
+            Gmail/Yahoo's bulk sender rules -- leave this on unless you have a specific reason not
+            to.
           </p>
 
           <div className="toolbar" style={{ marginTop: 16 }}>

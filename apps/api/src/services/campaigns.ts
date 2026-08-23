@@ -2,7 +2,12 @@ import { randomUUID } from "node:crypto";
 import { sql, type Selectable } from "kysely";
 import type { DB } from "../db/kysely.js";
 import type { Config } from "../config.js";
-import type { CampaignContentType, CampaignStatus, SubscribersTable } from "../db/types.js";
+import type {
+  CampaignContentType,
+  CampaignsTable,
+  CampaignStatus,
+  SubscribersTable,
+} from "../db/types.js";
 import { BadRequestError, NotFoundError } from "../lib/errors.js";
 import { markdownToHtml } from "../lib/markdown.js";
 import { renderCampaignEmail } from "./mailer.js";
@@ -216,20 +221,7 @@ export async function sendTestEmail(
     .selectAll()
     .where("email", "=", toEmail)
     .executeTakeFirst();
-  // Cast: Kysely's `Generated<Timestamp>` double-wraps ColumnType (Timestamp is
-  // itself a ColumnType), which its own `Selectable<>` utility only unwraps one
-  // level -- harmless here since renderCampaignEmail never reads these fields.
-  const synthetic = {
-    id: 0,
-    uuid: randomUUID(),
-    email: toEmail,
-    name: overrides.name ?? "Test Subscriber",
-    attribs: {},
-    status: "enabled",
-    created_at: new Date(),
-    updated_at: new Date(),
-  } as unknown as Selectable<SubscribersTable>;
-  const subscriber = existing ?? synthetic;
+  const subscriber = existing ?? syntheticSubscriber(toEmail, overrides.name ?? "Test Subscriber");
 
   const rendered = await renderCampaignEmail(db, config, campaign, template ?? null, subscriber);
   const result = await sendWithChain(db, chain, {
@@ -237,7 +229,70 @@ export async function sendTestEmail(
     subject: rendered.subject,
     html: rendered.html,
     fromOverride: campaign.from_email,
+    unsubscribeUrl: rendered.unsubscribeUrl,
   });
 
   return { ok: result.ok, error: result.error };
+}
+
+// Cast: Kysely's `Generated<Timestamp>` double-wraps ColumnType (Timestamp is
+// itself a ColumnType), which its own `Selectable<>` utility only unwraps one
+// level -- harmless here since renderCampaignEmail never reads these fields.
+function syntheticSubscriber(email: string, name: string): Selectable<SubscribersTable> {
+  return {
+    id: 0,
+    uuid: randomUUID(),
+    email,
+    name,
+    attribs: {},
+    status: "enabled",
+    created_at: new Date(),
+    updated_at: new Date(),
+  } as unknown as Selectable<SubscribersTable>;
+}
+
+export interface PreviewInput {
+  subject?: string;
+  body: string;
+  body_source?: string | null;
+  content_type?: CampaignContentType;
+  template_id?: number | null;
+}
+
+/**
+ * Renders a campaign body for preview -- same rendering path as a real send
+ * (renderCampaignEmail, so tracking links/open pixel/unsubscribe link are
+ * all present exactly as they'd be for a recipient), but against a
+ * synthetic, non-persisted campaign and subscriber. Unlike sendTestEmail,
+ * this needs no saved campaign row and no sending connection -- it works
+ * for a brand new, never-saved campaign draft, matching listmonk's preview.
+ */
+export async function previewCampaign(
+  db: DB,
+  config: Config,
+  input: PreviewInput,
+): Promise<{ subject: string; html: string }> {
+  const content_type = input.content_type ?? "richtext";
+  const body = content_type === "markdown" ? markdownToHtml(input.body) : input.body;
+
+  const template = input.template_id
+    ? await db
+        .selectFrom("templates")
+        .selectAll()
+        .where("id", "=", input.template_id)
+        .executeTakeFirst()
+    : null;
+
+  const campaign = {
+    id: 0,
+    uuid: randomUUID(),
+    name: "Preview",
+    subject: input.subject ?? "",
+    body,
+    content_type,
+  } as unknown as Selectable<CampaignsTable>;
+
+  const subscriber = syntheticSubscriber("preview@example.com", "Preview Subscriber");
+  const rendered = await renderCampaignEmail(db, config, campaign, template ?? null, subscriber);
+  return { subject: rendered.subject, html: rendered.html };
 }

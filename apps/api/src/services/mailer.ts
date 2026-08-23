@@ -12,6 +12,7 @@ type Template = Selectable<TemplatesTable>;
 export interface RenderedEmail {
   subject: string;
   html: string;
+  unsubscribeUrl: string;
 }
 
 function unsubscribeUrl(config: Config, subscriber: Subscriber, campaign: Campaign): string {
@@ -47,6 +48,7 @@ export async function renderCampaignEmail(
   template: Template | null,
   subscriber: Subscriber,
 ): Promise<RenderedEmail> {
+  const unsubUrl = unsubscribeUrl(config, subscriber, campaign);
   const context = {
     Subscriber: {
       ID: subscriber.id,
@@ -61,7 +63,7 @@ export async function renderCampaignEmail(
       Name: campaign.name,
       Subject: campaign.subject,
     },
-    UnsubscribeURL: unsubscribeUrl(config, subscriber, campaign),
+    UnsubscribeURL: unsubUrl,
   };
 
   const body = template ? template.body.replace("{{ Body }}", campaign.body) : campaign.body;
@@ -76,17 +78,14 @@ export async function renderCampaignEmail(
   if (campaign.content_type === "plain") {
     const text = renderTemplate(body, context);
     const html = `<pre style="white-space:pre-wrap;font-family:inherit;margin:0">${escapeHtml(text)}</pre>`;
-    return { subject: renderTemplate(campaign.subject, context), html };
+    return { subject: renderTemplate(campaign.subject, context), html, unsubscribeUrl: unsubUrl };
   }
 
   let html = renderTemplate(body, context);
 
-  // The unsubscribe link is rendered before extraction/tracking so it can be
-  // excluded below -- it must never be wrapped in click-tracking, or an
-  // unsubscribe click would log a spurious "link click" (and could even fire
-  // a link_clicked workflow trigger) before redirecting.
-  const unsubUrl = context.UnsubscribeURL;
-
+  // unsubUrl must never be wrapped in click-tracking below, or an unsubscribe
+  // click would log a spurious "link click" (and could even fire a
+  // link_clicked workflow trigger) before redirecting.
   const links = extractLinks(html).filter((url) => url !== unsubUrl);
   if (links.length > 0) {
     await db
@@ -100,7 +99,7 @@ export async function renderCampaignEmail(
   );
   html = appendOpenPixel(html, openPixelUrl(config, subscriber, campaign));
 
-  return { subject: renderTemplate(campaign.subject, context), html };
+  return { subject: renderTemplate(campaign.subject, context), html, unsubscribeUrl: unsubUrl };
 }
 
 function escapeHtml(s: string): string {

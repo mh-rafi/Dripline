@@ -205,6 +205,7 @@ export async function processEnrollmentStep(
         to: subscriber.email,
         subject: renderTemplate(step.subject, context),
         html: renderTemplate(step.body, context),
+        unsubscribeUrl: context.UnsubscribeURL,
       });
       if (!result.ok && result.error === "rate_limited") {
         // Not a failure -- retry this same step next tick instead of silently

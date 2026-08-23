@@ -20,6 +20,10 @@ export interface SendInput {
   html: string;
   /** Overrides the connection's from_email (e.g. a campaign-level From). */
   fromOverride?: string | null;
+  /** The signed unsubscribe link for this recipient+campaign, if applicable.
+   * Used to build the List-Unsubscribe header (see `connection.list_unsubscribe_header`) --
+   * not otherwise sent as-is, since it's also embedded in the rendered body. */
+  unsubscribeUrl?: string;
 }
 
 export interface SendResult {
@@ -31,7 +35,13 @@ export interface SendResult {
 /** A normalized sending interface so additional provider types (Postmark,
  * SendGrid, Mailgun, ...) are new implementations, not a redesign. */
 export interface ConnectionSender {
-  send(input: { to: string; from: string; subject: string; html: string }): Promise<void>;
+  send(input: {
+    to: string;
+    from: string;
+    subject: string;
+    html: string;
+    headers?: Record<string, string>;
+  }): Promise<void>;
   /** Lightweight credentials/reachability check used by the test-connection UI. */
   verify(): Promise<void>;
 }
@@ -56,12 +66,19 @@ function buildSmtpTransporter(cfg: SmtpConnectionConfig): Transporter {
 
 class SmtpSender implements ConnectionSender {
   constructor(private transporter: Transporter) {}
-  async send(input: { to: string; from: string; subject: string; html: string }) {
+  async send(input: {
+    to: string;
+    from: string;
+    subject: string;
+    html: string;
+    headers?: Record<string, string>;
+  }) {
     await this.transporter.sendMail({
       from: input.from,
       to: input.to,
       subject: input.subject,
       html: input.html,
+      headers: input.headers,
     });
   }
   async verify() {
@@ -98,9 +115,18 @@ class SesSender implements ConnectionSender {
     return this.clientPromise;
   }
 
-  async send(input: { to: string; from: string; subject: string; html: string }) {
+  async send(input: {
+    to: string;
+    from: string;
+    subject: string;
+    html: string;
+    headers?: Record<string, string>;
+  }) {
     const client = await this.client();
     const { SendEmailCommand } = await import("@aws-sdk/client-sesv2");
+    const headers = input.headers
+      ? Object.entries(input.headers).map(([Name, Value]) => ({ Name, Value }))
+      : undefined;
     const cmd = new SendEmailCommand({
       FromEmailAddress: input.from,
       Destination: { ToAddresses: [input.to] },
@@ -108,6 +134,7 @@ class SesSender implements ConnectionSender {
         Simple: {
           Subject: { Data: input.subject },
           Body: { Html: { Data: input.html } },
+          Headers: headers,
         },
       },
     });
@@ -162,6 +189,22 @@ function fromAddress(connection: Connection, override?: string | null): string {
   if (override) return override;
   if (connection.from_name) return `${connection.from_name} <${connection.from_email}>`;
   return connection.from_email;
+}
+
+/** Only the URL form of List-Unsubscribe -- no `mailto:` option, since that
+ * would need a mailbox that actually receives and processes unsubscribe
+ * requests (IMAP polling or similar), which this project doesn't have. The
+ * URL form plus one-click POST is what modern mailbox providers' 2024 bulk
+ * sender requirements actually ask for. */
+function listUnsubscribeHeaders(
+  connection: Connection,
+  unsubscribeUrl: string | undefined,
+): Record<string, string> | undefined {
+  if (!connection.list_unsubscribe_header || !unsubscribeUrl) return undefined;
+  return {
+    "List-Unsubscribe": `<${unsubscribeUrl}>`,
+    "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+  };
 }
 
 // ---- result recording + auto-disable ---------------------------------------
@@ -227,6 +270,7 @@ export async function sendThroughConnection(
       from: fromAddress(connection, input.fromOverride),
       subject: input.subject,
       html: input.html,
+      headers: listUnsubscribeHeaders(connection, input.unsubscribeUrl),
     });
     await recordConnectionResult(db, connection.id, true);
     return { ok: true, connectionId: connection.id, error: null };

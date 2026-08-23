@@ -8,6 +8,7 @@ import {
   getCampaignOrThrow,
   getCampaignProgress,
   pauseCampaign,
+  previewCampaign,
   sendTestEmail,
   startCampaign,
 } from "../services/campaigns.js";
@@ -73,6 +74,14 @@ const TestEmail = z.object({
   body_source: z.string().nullish(),
   content_type: ContentType.optional(),
   from_email: z.string().email().nullish(),
+  template_id: z.number().int().nullish(),
+});
+
+const Preview = z.object({
+  subject: z.string().optional(),
+  body: z.string(),
+  body_source: z.string().nullish(),
+  content_type: ContentType.optional(),
   template_id: z.number().int().nullish(),
 });
 
@@ -232,6 +241,15 @@ export default async function campaignRoutes(
     const body = TestEmail.parse(req.body);
     const { email, ...overrides } = body;
     return sendTestEmail(db, config, id, email, overrides);
+  });
+
+  // Unlike /test, works for a never-saved draft (no campaign id, no
+  // sending connection required) -- renders the same way a real send would
+  // (merge fields, template wrapper, tracking links) against a synthetic
+  // subscriber, returning HTML for the UI to display directly.
+  app.post("/api/v1/campaigns/preview", async (req) => {
+    const body = Preview.parse(req.body);
+    return previewCampaign(db, config, body);
   });
 
   app.get("/api/v1/campaigns/:id/progress", async (req) => {

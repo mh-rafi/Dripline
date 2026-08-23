@@ -1,6 +1,7 @@
 import { lazy, Suspense } from "react";
 import PlainTextEditor from "./PlainTextEditor.js";
 import type { ContentType } from "../../lib/types.js";
+import { convertContent, isLossyTarget, type ContentValue } from "../../lib/contentConversion.js";
 
 // Lazy-loaded: TinyMCE, GrapesJS, and CodeMirror are each substantial on
 // their own -- most sessions only ever touch one editing mode, so nobody
@@ -11,7 +12,7 @@ const HtmlEditor = lazy(() => import("./HtmlEditor.js"));
 const MarkdownEditor = lazy(() => import("./MarkdownEditor.js"));
 const VisualEditor = lazy(() => import("./VisualEditor.js"));
 
-export type { ContentType };
+export type { ContentType, ContentValue };
 
 export const CONTENT_TYPES: { value: ContentType; label: string }[] = [
   { value: "richtext", label: "Rich text" },
@@ -20,11 +21,6 @@ export const CONTENT_TYPES: { value: ContentType; label: string }[] = [
   { value: "plain", label: "Plain text" },
   { value: "visual", label: "Visual" },
 ];
-
-export interface ContentValue {
-  body: string;
-  body_source: string | null;
-}
 
 interface ContentTypeEditorProps {
   contentType: ContentType;
@@ -40,6 +36,12 @@ interface ContentTypeEditorProps {
  * than pre-converted here), `body_source` is the original editor source
  * where one exists separately from `body` (markdown text, the visual
  * builder's JSON project data).
+ *
+ * Switching between richtext/html/markdown converts the current content
+ * rather than discarding it (see lib/contentConversion.ts), matching
+ * listmonk. Plain text and the visual builder are inherently lossy targets
+ * -- switching to either still carries content across best-effort, but a
+ * confirm dialog warns first since real formatting can't survive.
  */
 export default function ContentTypeEditor({
   contentType,
@@ -47,6 +49,18 @@ export default function ContentTypeEditor({
   onChangeType,
   onChangeValue,
 }: ContentTypeEditorProps) {
+  function switchTo(newType: ContentType) {
+    if (newType === contentType) return;
+    if (isLossyTarget(newType) && (value.body.trim() || value.body_source?.trim())) {
+      const proceed = confirm(
+        `Switching to "${CONTENT_TYPES.find((t) => t.value === newType)?.label}" may lose formatting from your current content and can't be undone. Continue?`,
+      );
+      if (!proceed) return;
+    }
+    onChangeValue(convertContent(contentType, newType, value));
+    onChangeType(newType);
+  }
+
   return (
     <div>
       <div className="toolbar" style={{ marginBottom: 8 }}>
@@ -55,7 +69,7 @@ export default function ContentTypeEditor({
             key={t.value}
             type="button"
             className={contentType === t.value ? "" : "secondary"}
-            onClick={() => onChangeType(t.value)}
+            onClick={() => switchTo(t.value)}
           >
             {t.label}
           </button>

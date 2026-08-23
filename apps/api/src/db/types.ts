@@ -100,6 +100,7 @@ export interface ConnectionsTable {
   max_errors: Generated<number>;
   error_count: Generated<number>;
   disabled_reason: string | null;
+  list_unsubscribe_header: Generated<boolean>;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
 }

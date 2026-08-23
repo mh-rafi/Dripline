@@ -2,32 +2,14 @@ import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api } from "../lib/api.js";
 import type { Campaign, Connection, List, Template } from "../lib/types.js";
-import { marked } from "marked";
 import Badge from "../components/Badge.js";
 import ProgressBar from "../components/ProgressBar.js";
 import DurationInput from "../components/DurationInput.js";
+import PreviewModal from "../components/PreviewModal.js";
 import ContentTypeEditor, {
   type ContentType,
   type ContentValue,
 } from "../components/content-editor/ContentTypeEditor.js";
-
-marked.setOptions({ breaks: true, gfm: true });
-
-/** Renders a campaign body for preview according to its content type --
- * mirrors how apps/api/src/services/mailer.ts treats each type at send time. */
-function renderPreview(campaign: Campaign): string {
-  if (campaign.content_type === "markdown") {
-    return marked.parse(campaign.body, { async: false }) as string;
-  }
-  if (campaign.content_type === "plain") {
-    const escaped = campaign.body
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
-    return `<pre style="white-space:pre-wrap;font-family:inherit;margin:0">${escaped}</pre>`;
-  }
-  return campaign.body;
-}
 
 interface Analytics {
   opens: number;
@@ -70,6 +52,38 @@ export default function CampaignDetail() {
   const [testEmail, setTestEmail] = useState("");
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; error: string | null } | null>(null);
+
+  const [preview, setPreview] = useState<{ subject: string; html: string } | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+
+  /** Previews the current in-progress edits while editing, or the saved
+   * campaign as-is otherwise -- either way it's a real server-side render
+   * (template wrapper, merge fields, markdown conversion), not a client-side
+   * approximation. */
+  async function showPreview() {
+    if (!campaign) return;
+    setPreviewLoading(true);
+    setPreviewError(null);
+    try {
+      const result = await api.post<{ subject: string; html: string }>("/campaigns/preview", {
+        subject: editing ? subject : campaign.subject,
+        body: editing ? content.body : campaign.body,
+        body_source: editing ? content.body_source : campaign.body_source,
+        content_type: editing ? contentType : campaign.content_type,
+        template_id: editing
+          ? templateId
+            ? Number(templateId)
+            : undefined
+          : (campaign.template_id ?? undefined),
+      });
+      setPreview(result);
+    } catch (err) {
+      setPreviewError(err instanceof Error ? err.message : "preview failed");
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
 
   function load() {
     api.get<Campaign>(`/campaigns/${id}`).then((c) => {
@@ -263,12 +277,20 @@ export default function CampaignDetail() {
           <ContentTypeEditor
             contentType={contentType}
             value={content}
-            onChangeType={(t) => {
-              setContentType(t);
-              setContent({ body: "", body_source: null });
-            }}
+            onChangeType={setContentType}
             onChangeValue={setContent}
           />
+          <div className="toolbar" style={{ marginTop: 8 }}>
+            <button
+              type="button"
+              className="secondary"
+              onClick={showPreview}
+              disabled={previewLoading}
+            >
+              {previewLoading ? "Loading preview…" : "Preview"}
+            </button>
+            {previewError && <span className="error-text">{previewError}</span>}
+          </div>
 
           <label>Lists</label>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
@@ -430,6 +452,14 @@ export default function CampaignDetail() {
             </button>
           </div>
         </form>
+
+        {preview && (
+          <PreviewModal
+            subject={preview.subject}
+            html={preview.html}
+            onClose={() => setPreview(null)}
+          />
+        )}
       </div>
     );
   }
@@ -536,11 +566,22 @@ export default function CampaignDetail() {
       </div>
 
       <div className="card">
-        <h3 style={{ marginTop: 0 }}>Body preview</h3>
-        <div style={{ background: "#fff", color: "#111", padding: 12, borderRadius: 6 }}>
-          <div dangerouslySetInnerHTML={{ __html: renderPreview(campaign) }} />
+        <h3 style={{ marginTop: 0 }}>Body</h3>
+        <div className="toolbar" style={{ marginBottom: 0 }}>
+          <button className="secondary" onClick={showPreview} disabled={previewLoading}>
+            {previewLoading ? "Loading preview…" : "Preview"}
+          </button>
+          {previewError && <span className="error-text">{previewError}</span>}
         </div>
       </div>
+
+      {preview && (
+        <PreviewModal
+          subject={preview.subject}
+          html={preview.html}
+          onClose={() => setPreview(null)}
+        />
+      )}
     </div>
   );
 }

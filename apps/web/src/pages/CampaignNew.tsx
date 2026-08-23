@@ -7,6 +7,7 @@ import ContentTypeEditor, {
   type ContentType,
   type ContentValue,
 } from "../components/content-editor/ContentTypeEditor.js";
+import PreviewModal from "../components/PreviewModal.js";
 
 export default function CampaignNew() {
   const navigate = useNavigate();
@@ -35,6 +36,29 @@ export default function CampaignNew() {
   const [testEmail, setTestEmail] = useState("");
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; error: string | null } | null>(null);
+
+  const [preview, setPreview] = useState<{ subject: string; html: string } | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+
+  async function showPreview() {
+    setPreviewLoading(true);
+    setPreviewError(null);
+    try {
+      const result = await api.post<{ subject: string; html: string }>("/campaigns/preview", {
+        subject,
+        body: content.body,
+        body_source: content.body_source,
+        content_type: contentType,
+        template_id: templateId ? Number(templateId) : undefined,
+      });
+      setPreview(result);
+    } catch (err) {
+      setPreviewError(err instanceof Error ? err.message : "preview failed");
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
 
   useEffect(() => {
     api.get<List[]>("/lists").then(setLists);
@@ -168,12 +192,20 @@ export default function CampaignNew() {
         <ContentTypeEditor
           contentType={contentType}
           value={content}
-          onChangeType={(t) => {
-            setContentType(t);
-            setContent({ body: "", body_source: null });
-          }}
+          onChangeType={setContentType}
           onChangeValue={setContent}
         />
+        <div className="toolbar" style={{ marginTop: 8 }}>
+          <button
+            type="button"
+            className="secondary"
+            onClick={showPreview}
+            disabled={previewLoading}
+          >
+            {previewLoading ? "Loading preview…" : "Preview"}
+          </button>
+          {previewError && <span className="error-text">{previewError}</span>}
+        </div>
 
         <label>Lists</label>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
@@ -324,6 +356,14 @@ export default function CampaignNew() {
           <button type="submit">Create campaign</button>
         </div>
       </form>
+
+      {preview && (
+        <PreviewModal
+          subject={preview.subject}
+          html={preview.html}
+          onClose={() => setPreview(null)}
+        />
+      )}
     </div>
   );
 }

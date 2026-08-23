@@ -486,8 +486,9 @@ Tasks:
   auto-blocklisting. Mailbox-scan-based bounce detection (IMAP/POP polling, as
   opposed to webhook push) is still open if a provider without bounce
   webhooks needs support.
-- CSV subscriber import + double opt-in confirm flow -- carried over from
-  Phase 1's original exit criteria, never built (see Status section above).
+- ~~CSV subscriber import~~ -- done (see Phase 1 addendum). Double opt-in
+  confirm flow is still open, carried over from Phase 1's original exit
+  criteria (see Status section above).
 - Campaign analytics polish, public archive pages.
 - listmonk → Dripline import tool -- script written, never run against a real
   listmonk database.
@@ -561,10 +562,9 @@ markdown | visual`) + `body` (always final HTML, converted from markdown at
   single HTML part. A true multipart text/plain part is a reasonable later
   improvement; scoped out here to avoid restructuring the sender interface
   across SMTP and SES.
-- **No cross-format conversion.** Switching a campaign's content type in the
-  UI clears the body rather than attempting to convert it (listmonk does
-  convert markdown→HTML when switching, via `Campaign.ConvertContent`). Not
-  implemented here -- scoped out as a follow-up, not attempted partially.
+- ~~**No cross-format conversion.** Switching a campaign's content type in
+  the UI clears the body rather than attempting to convert it.~~ Fixed --
+  see the "cross-format content-type switching" addendum below.
 - **Heavy editors are lazy-loaded**, not bundled into the main app chunk.
   TinyMCE and GrapesJS are each large; `ContentTypeEditor.tsx` uses
   `React.lazy` + `Suspense` per editor so a session that only ever uses one
@@ -662,6 +662,157 @@ received email reflect the overrides with merge fields correctly substituted
 for a synthetic (non-subscriber) address; confirmed a markdown-content-type
 test send is correctly converted to real HTML (`<h1>`, `<strong>`) rather
 than sending literal markdown syntax.
+
+### 8.2 Cross-format content-type switching (added 2026-08-23)
+
+**Problem:** switching a campaign's content type in the UI unconditionally
+reset `{ body: "", body_source: null }` -- so even richtext ↔ HTML, which
+share the exact same underlying HTML and need no conversion at all, wiped
+the campaign every time. Confirmed as a real regression against the
+original 8.0 decision to scope this out entirely; listmonk itself only
+loses formatting when switching to plain text or the visual builder, not
+between richtext/HTML/markdown.
+
+**Fixed:**
+
+- New `lib/contentConversion.ts`: `convertContent(from, to, value)` routes
+  through HTML as the common intermediate representation. richtext ↔ html
+  is a direct passthrough (both already store HTML in `body`); markdown →
+  HTML via `marked` (same settings as the live preview); HTML → markdown via
+  a new `turndown` dependency (`headingStyle: "atx"`,
+  `codeBlockStyle: "fenced"`) -- the one new package added for this, since
+  hand-rolling HTML→Markdown correctly isn't worth it next to a well-
+  established purpose-built library.
+- Plain text and visual are still lossy targets (`isLossyTarget`), but no
+  longer wipe to blank either: switching to plain strips HTML down to
+  visible text (`element.textContent`) instead of showing raw markup in a
+  textarea; switching to visual hands the current HTML to GrapesJS as
+  `initialHtml` (it already supported importing from HTML when there's no
+  saved `projectData` -- the wipe bug was just never giving it the chance).
+- `ContentTypeEditor.tsx` now owns the switch: clicking a mode button calls
+  `convertContent` and, only when the target is lossy and there's existing
+  content, shows a `confirm()` dialog ("may lose formatting... can't be
+  undone") before applying it. `CampaignNew.tsx`/`CampaignDetail.tsx` no
+  longer reset content themselves -- their `onChangeType` is just
+  `setContentType`.
+
+**Status: verified in a real browser** against the running dev app: bolded
+text in richtext survived a richtext → markdown → richtext round trip
+(`**...**` in the markdown source, confirmed live-preview rendered
+`<strong>`) and a richtext → Raw HTML switch showed the exact `<strong>`
+markup; switching to plain text correctly reduced the same content to
+visible text with tags stripped; the confirm dialog was confirmed to both
+block the switch on cancel and allow it on accept (content type stayed on
+the prior mode when the dialog was dismissed).
+
+### 8.3 List-Unsubscribe header + styled template default (added 2026-08-23)
+
+**Context:** prompted by inspecting a real newsletter's headers/HTML (a Kit
+(ConvertKit)-sent email) -- two gaps came out of that: no `List-Unsubscribe`
+header at all, and no styled default template to make a campaign look like
+a designed newsletter rather than plain text with tags.
+
+**List-Unsubscribe -- per-connection, not global or per-campaign:**
+
+- New `connections.list_unsubscribe_header` column (boolean, default
+  `true`). Deliberately connection-level rather than a single global
+  setting (unlike listmonk's Settings → Privacy toggle): connections
+  already model distinct sending domains/identities in this project (see
+  Phase 3), and the header is fundamentally about which sending identity is
+  making the claim, which doesn't fit a single global on/off in a
+  multi-domain platform. Not per-campaign either -- it's a technical/
+  compliance header, not campaign content.
+- URL form only (`List-Unsubscribe: <url>` +
+  `List-Unsubscribe-Post: List-Unsubscribe=One-Click`), reusing the same
+  signed unsubscribe link already embedded in the body. No `mailto:` form,
+  since one-click `mailto:` unsubscribe needs a mailbox that actually
+  receives and processes those requests (IMAP polling or similar), which
+  this project has no infrastructure for -- the URL form is what modern
+  ESPs mostly rely on anyway and is what Gmail/Yahoo's 2024 bulk-sender
+  rules actually require.
+- `renderCampaignEmail` (`services/mailer.ts`) now returns the computed
+  `unsubscribeUrl` alongside `subject`/`html` so callers can thread it into
+  `sendWithChain`'s `SendInput`; `sendThroughConnection`
+  (`services/connections.ts`) builds the header only when the resolved
+  connection has it enabled. Wired into all three send paths: campaign
+  dispatch, test sends, and workflow `send_email` steps.
+- `ConnectionSender.send()` gained an optional `headers` map -- passed to
+  nodemailer's `headers` option for SMTP, and to SESv2's
+  `Content.Simple.Headers` array for SES.
+
+**Styled default template, no schema change needed:** the user's own
+observation was correct -- `templates.body` (wrapping `{{ Body }}`) already
+supports arbitrary CSS, `mailer.ts` already substitutes into it, so
+per-campaign look-and-feel via template selection was already the
+architecture. What was actually missing:
+
+- `Templates.tsx`'s default new-template body was a bare
+  `<div>{{ Body }}</div>`; replaced with a styled wrapper (bigger headings,
+  underlined orange `#f87000` links, `<hr>` dividers, a left-border
+  blockquote) as a real starting point instead of nothing.
+- The template editor was a plain `<textarea>`; swapped for the same
+  `HtmlEditor` (CodeMirror) component campaigns already use for Raw HTML,
+  for syntax highlighting. Lazy-loaded via the same dynamic `import()` as
+  `ContentTypeEditor.tsx` -- Rollup shares one chunk between both call
+  sites, confirmed via build output (`HtmlEditor` chunk stayed ~0.2KB gzip;
+  a first attempt with a static import accidentally pulled CodeMirror into
+  the main bundle, +88KB gzip, caught and fixed before landing).
+
+**Status: verified against a real API + Postgres + Mailpit (SMTP catcher),
+not mocked.** Two connections (header on/off) each sent a test campaign;
+Mailpit's own header parsing confirmed the "on" connection's message had a
+correctly-populated `List-Unsubscribe`/`List-Unsubscribe-Post` (matching
+the campaign+subscriber's signed unsubscribe URL) and the "off" one had
+neither. A campaign using the new default template, sent through Mailpit,
+rendered visually as intended (bold heading, orange link, hr, bordered
+blockquote) -- confirmed via screenshot, and Mailpit's UI independently
+surfaced an "Unsubscribe" link at the message level, proving the header
+was recognized as such by a real mail client, not just present as text.
+
+### 8.4 Preview button (added 2026-08-23)
+
+**Goal:** a "Preview" button on the campaign add/edit pages and the
+template edit page, matching listmonk, so the actual rendered email
+(merge fields resolved, template wrapper applied) can be checked without
+sending a real or test email.
+
+- New backend renders, both server-side (matches send-time output exactly,
+  not a client-side approximation): `POST /campaigns/preview` -- takes
+  `{ subject?, body, body_source?, content_type?, template_id? }` directly
+  (no campaign id, no sending connection needed) and returns
+  `{ subject, html }` via the same `renderCampaignEmail` path a real send
+  uses, against a synthetic non-persisted campaign+subscriber (refactored
+  the synthetic-subscriber construction already used by `sendTestEmail`
+  into a shared `syntheticSubscriber` helper rather than duplicating it).
+  This is what makes it work for a campaign that's never been saved, unlike
+  `/campaigns/:id/test` which requires an existing row and a connection.
+  `POST /templates/preview` -- takes `{ body }` and substitutes a fixed
+  sample body (a heading, a link, an hr, a blockquote -- covering every
+  element the default template's CSS targets) for `{{ Body }}`, so a
+  template can be previewed standalone.
+- Frontend: new `components/PreviewModal.tsx`, a modal rendering the
+  returned HTML in an `<iframe srcDoc={html}>` -- deliberately not
+  `dangerouslySetInnerHTML` directly in the page. This also **fixed a
+  latent bug**: `CampaignDetail.tsx`'s old read-only "Body preview" card
+  used `dangerouslySetInnerHTML` on the raw campaign body; once templates
+  can contain a `<style>` block targeting `body` (see 8.3's styled
+  default), that would have leaked into the whole admin app's styling the
+  first time someone viewed a campaign using such a template. The iframe
+  scopes it. That old card (which also never applied the template wrapper
+  or merge fields -- just a client-side content-type-only approximation)
+  was replaced by the same Preview button/modal used everywhere else.
+  Wired into `CampaignNew.tsx`, `CampaignDetail.tsx` (both the edit form
+  and the read-only view), and `Templates.tsx`.
+
+**Status: verified in a real browser** against the running dev app: New
+Campaign's preview correctly rendered a selected template's styled wrapper
+with `{{ Subscriber.Name }}` resolved (confirmed the iframe's `srcDoc`
+contained the template's `<style>` block, and that the admin page's own
+background/styling was unaffected -- proving the isolation works); the
+read-only campaign detail page's preview button rendered a real saved
+campaign's content; the template editor's preview button rendered the
+sample content through the in-progress (unsaved) template body, correctly
+styled.
 
 ---
 
