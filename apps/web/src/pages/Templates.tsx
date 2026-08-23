@@ -2,19 +2,25 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import { api } from "../lib/api.js";
 import type { Template } from "../lib/types.js";
 import PreviewModal from "../components/PreviewModal.js";
+import {
+  PageHeaderWrapper,
+  BlockLayout,
+  Button,
+  Input,
+  FormLabel,
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+  TableEmptyState,
+  Popconfirm,
+  Skeleton,
+} from "../components/ui/index.js";
 
-// Lazy, matching ContentTypeEditor's own dynamic import of the same module --
-// Rollup shares the one chunk between both, so this doesn't cost a second
-// download; a static import here would have pulled CodeMirror into the main
-// bundle for every page, not just Templates/campaign editing.
 const HtmlEditor = lazy(() => import("../components/content-editor/HtmlEditor.js"));
 
-// A styled starting point rather than a bare wrapper -- bigger headings,
-// underlined orange links, hr dividers, and a left-border blockquote so a
-// campaign looks like a designed newsletter without the campaign author
-// having to write any CSS themselves. Different campaigns get different
-// looks by picking a different template, not by editing the shared rich
-// text editor's output.
 const DEFAULT_BODY = `<!DOCTYPE html>
 <html>
 <head>
@@ -111,76 +117,91 @@ export default function Templates() {
   }
 
   async function remove(id: number) {
-    if (!confirm("Delete this template?")) return;
     await api.delete(`/templates/${id}`);
     load();
   }
 
   return (
     <div>
-      <div className="page-header">
-        <h2>Templates</h2>
-        <button onClick={startNew}>New template</button>
-      </div>
+      <PageHeaderWrapper
+        variant="title-with-actions"
+        title="Templates"
+        actions={<Button onClick={startNew}>New template</Button>}
+      />
 
       {editing && (
-        <form className="card" onSubmit={save}>
-          <label>Name</label>
-          <input required value={name} onChange={(e) => setName(e.target.value)} />
-          <label>Body (wrap the campaign content with {"{{ Body }}"})</label>
-          <Suspense fallback={<p className="muted">Loading editor…</p>}>
-            <HtmlEditor value={body} onChange={setBody} />
-          </Suspense>
-          <div className="toolbar" style={{ marginTop: 16 }}>
-            <button type="submit">Save</button>
-            <button type="button" className="secondary" onClick={() => setEditing(null)}>
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              onClick={showPreview}
-              disabled={previewLoading}
-            >
-              {previewLoading ? "Loading preview…" : "Preview"}
-            </button>
-            {previewError && <span className="error-text">{previewError}</span>}
-          </div>
-        </form>
+        <BlockLayout className="mb-6">
+          <form onSubmit={save} className="space-y-4">
+            <div className="space-y-2">
+              <FormLabel required>Name</FormLabel>
+              <Input required value={name} onChange={(e) => setName(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <FormLabel>Body (wrap the campaign content with {"{{ Body }}"})</FormLabel>
+              <Suspense fallback={<Skeleton className="h-48" />}>
+                <HtmlEditor value={body} onChange={setBody} />
+              </Suspense>
+            </div>
+            <div className="flex gap-2">
+              <Button type="submit">Save</Button>
+              <Button type="button" variant="outline" onClick={() => setEditing(null)}>
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={showPreview}
+                disabled={previewLoading}
+              >
+                {previewLoading ? "Loading preview…" : "Preview"}
+              </Button>
+              {previewError && <span className="text-destructive text-sm">{previewError}</span>}
+            </div>
+          </form>
+        </BlockLayout>
       )}
 
       {preview && <PreviewModal html={preview} onClose={() => setPreview(null)} />}
 
-      <table>
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th />
-          </tr>
-        </thead>
-        <tbody>
-          {templates.map((t) => (
-            <tr key={t.id}>
-              <td>{t.name}</td>
-              <td className="toolbar" style={{ marginBottom: 0 }}>
-                <button className="secondary" onClick={() => startEdit(t)}>
-                  Edit
-                </button>
-                <button className="secondary" onClick={() => remove(t.id)}>
-                  Delete
-                </button>
-              </td>
-            </tr>
-          ))}
-          {templates.length === 0 && (
-            <tr>
-              <td colSpan={2} className="muted">
-                No templates yet — campaigns can also be sent without one.
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+      <BlockLayout padding="sm">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Name</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {templates.map((t) => (
+              <TableRow key={t.id}>
+                <TableCell>{t.name}</TableCell>
+                <TableCell className="text-right">
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" size="sm" onClick={() => startEdit(t)}>
+                      Edit
+                    </Button>
+                    <Popconfirm
+                      description="Delete this template?"
+                      onConfirm={() => remove(t.id)}
+                      confirmText="Delete"
+                    >
+                      <Button variant="outline" size="sm">
+                        Delete
+                      </Button>
+                    </Popconfirm>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+        {templates.length === 0 && (
+          <TableEmptyState
+            title="No templates yet"
+            description="Campaigns can also be sent without one."
+          />
+        )}
+      </BlockLayout>
     </div>
   );
 }

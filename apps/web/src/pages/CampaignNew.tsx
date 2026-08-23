@@ -8,6 +8,21 @@ import ContentTypeEditor, {
   type ContentValue,
 } from "../components/content-editor/ContentTypeEditor.js";
 import PreviewModal from "../components/PreviewModal.js";
+import {
+  PageHeaderWrapper,
+  BlockLayout,
+  Button,
+  Input,
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+  Checkbox,
+  CheckboxLabel,
+  FormLabel,
+  FormRow,
+} from "../components/ui/index.js";
 
 export default function CampaignNew() {
   const navigate = useNavigate();
@@ -154,208 +169,235 @@ export default function CampaignNew() {
 
   return (
     <div>
-      <div className="page-header">
-        <h2>New campaign</h2>
-      </div>
+      <PageHeaderWrapper variant="title-only" title="New campaign" />
 
-      <form className="card" onSubmit={submit}>
-        <div className="form-row">
-          <div>
-            <label>Name (internal)</label>
-            <input required value={name} onChange={(e) => setName(e.target.value)} />
-          </div>
-          <div>
-            <label>From email (optional override)</label>
-            <input type="email" value={fromEmail} onChange={(e) => setFromEmail(e.target.value)} />
-          </div>
-        </div>
-
-        <label>Subject</label>
-        <input required value={subject} onChange={(e) => setSubject(e.target.value)} />
-
-        <label>Template (optional)</label>
-        <select value={templateId} onChange={(e) => setTemplateId(e.target.value)}>
-          <option value="">None</option>
-          {templates.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name}
-            </option>
-          ))}
-        </select>
-
-        <label>
-          Body{" "}
-          <span className="muted" style={{ fontSize: 12 }}>
-            (supports {"{{ Subscriber.Name }}"} etc.)
-          </span>
-        </label>
-        <ContentTypeEditor
-          contentType={contentType}
-          value={content}
-          onChangeType={setContentType}
-          onChangeValue={setContent}
-        />
-        <div className="toolbar" style={{ marginTop: 8 }}>
-          <button
-            type="button"
-            className="secondary"
-            onClick={showPreview}
-            disabled={previewLoading}
-          >
-            {previewLoading ? "Loading preview…" : "Preview"}
-          </button>
-          {previewError && <span className="error-text">{previewError}</span>}
-        </div>
-
-        <label>Lists</label>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          {lists.map((l) => (
-            <label
-              key={l.id}
-              style={{ display: "flex", alignItems: "center", gap: 6, width: "auto", margin: 0 }}
-            >
-              <input
-                type="checkbox"
-                style={{ width: "auto" }}
-                checked={listIds.includes(l.id)}
-                onChange={() => toggleList(l.id)}
+      <BlockLayout>
+        <form onSubmit={submit}>
+          <FormRow>
+            <div className="space-y-2">
+              <FormLabel required>Name (internal)</FormLabel>
+              <Input required value={name} onChange={(e) => setName(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <FormLabel>From email (optional override)</FormLabel>
+              <Input
+                type="email"
+                value={fromEmail}
+                onChange={(e) => setFromEmail(e.target.value)}
               />
-              {l.name}
-            </label>
-          ))}
-          {lists.length === 0 && <span className="muted">No lists yet — create one first.</span>}
-        </div>
+            </div>
+          </FormRow>
 
-        <label>
-          Sending connections{" "}
-          <span className="muted" style={{ fontSize: 12 }}>
-            (primary first, then ordered fallbacks)
-          </span>
-        </label>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
-          <select
-            defaultValue=""
-            onChange={(e) => {
-              addConnection(Number(e.target.value));
-              e.target.value = "";
-            }}
-            style={{ width: "auto" }}
-          >
-            <option value="" disabled>
-              Add a connection…
-            </option>
-            {connections
-              .filter((c) => !connectionIds.includes(c.id))
-              .map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name} — {c.from_email} ({c.type})
-                </option>
-              ))}
-          </select>
-          {connectionIds.length === 0 && (
-            <span className="muted">
-              No connection selected — at least one is required to send.
-            </span>
-          )}
-        </div>
-        <ol style={{ margin: "8px 0 0", paddingLeft: 20 }}>
-          {connectionIds.map((id, i) => {
-            const c = connections.find((x) => x.id === id);
-            return (
-              <li key={id} style={{ marginBottom: 4 }}>
-                {i === 0 ? <strong>primary: </strong> : <span className="muted">fallback: </span>}
-                {c ? `${c.name} — ${c.from_email} (${c.type})` : id}
-                <button
-                  type="button"
-                  className="secondary"
-                  style={{ marginLeft: 8, padding: "2px 8px" }}
-                  onClick={() => setConnectionIds((ids) => ids.filter((x) => x !== id))}
-                >
-                  remove
-                </button>
-                <button
-                  type="button"
-                  className="secondary"
-                  style={{ marginLeft: 4, padding: "2px 8px" }}
-                  onClick={() => moveConnection(i, -1)}
-                  disabled={i === 0}
-                >
-                  ↑
-                </button>
-                <button
-                  type="button"
-                  className="secondary"
-                  style={{ marginLeft: 4, padding: "2px 8px" }}
-                  onClick={() => moveConnection(i, 1)}
-                  disabled={i === connectionIds.length - 1}
-                >
-                  ↓
-                </button>
-              </li>
-            );
-          })}
-        </ol>
+          <div className="mt-4 space-y-2">
+            <FormLabel required>Subject</FormLabel>
+            <Input required value={subject} onChange={(e) => setSubject(e.target.value)} />
+          </div>
 
-        <label>
-          Campaign throttle{" "}
-          <span className="muted" style={{ fontSize: 12 }}>
-            (optional, additional cap on top of the connection's own rate limit — blank = no extra
-            cap)
-          </span>
-        </label>
-        <div className="form-row">
-          <input
-            type="number"
-            min={1}
-            value={rateLimitCount}
-            onChange={(e) => setRateLimitCount(e.target.value)}
-            placeholder="e.g. 1"
-          />
-          <DurationInput
-            seconds={rateLimitDurationSeconds}
-            onChange={setRateLimitDurationSeconds}
-            placeholder="e.g. 5"
-          />
-        </div>
-
-        <label>Send test email</label>
-        <div className="toolbar">
-          <input
-            type="email"
-            placeholder="you@example.com"
-            value={testEmail}
-            onChange={(e) => setTestEmail(e.target.value)}
-            style={{ maxWidth: 280 }}
-          />
-          <button
-            type="button"
-            className="secondary"
-            disabled={testing || !testEmail}
-            onClick={sendTest}
-          >
-            {testing ? "Sending…" : "Send test"}
-          </button>
-          {testResult && (
-            <span
-              style={{
-                color: testResult.ok ? "var(--success)" : "var(--danger, #c00)",
-                fontSize: 13,
-              }}
+          <div className="mt-4 space-y-2">
+            <FormLabel>Template (optional)</FormLabel>
+            <Select
+              value={templateId || "none"}
+              onValueChange={(v) => setTemplateId(v === "none" ? "" : v)}
             >
-              {testResult.ok ? "Test sent" : `Failed: ${testResult.error}`}
-            </span>
-          )}
-        </div>
-        <p className="muted" style={{ fontSize: 12, marginTop: -4 }}>
-          Saves this campaign as a draft first (needed to pick a sending connection), then sends a
-          one-off test -- it doesn't count as a real send.
-        </p>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">None</SelectItem>
+                {templates.map((t) => (
+                  <SelectItem key={t.id} value={String(t.id)}>
+                    {t.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
-        {error && <p className="error-text">{error}</p>}
-        <div style={{ marginTop: 20 }}>
-          <button type="submit">Create campaign</button>
-        </div>
-      </form>
+          <div className="mt-4 space-y-2">
+            <FormLabel>
+              Body{" "}
+              <span className="text-muted-foreground text-xs">
+                (supports {"{{ Subscriber.Name }}"} etc.)
+              </span>
+            </FormLabel>
+            <ContentTypeEditor
+              contentType={contentType}
+              value={content}
+              onChangeType={setContentType}
+              onChangeValue={setContent}
+            />
+            <div className="mt-2 flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={showPreview}
+                disabled={previewLoading}
+              >
+                {previewLoading ? "Loading preview…" : "Preview"}
+              </Button>
+              {previewError && <span className="text-destructive text-sm">{previewError}</span>}
+            </div>
+          </div>
+
+          <div className="mt-4 space-y-2">
+            <FormLabel>Lists</FormLabel>
+            <div className="flex flex-wrap gap-3">
+              {lists.map((l) => (
+                <div key={l.id} className="flex items-center gap-1.5">
+                  <Checkbox
+                    checked={listIds.includes(l.id)}
+                    onCheckedChange={() => toggleList(l.id)}
+                    id={`list-${l.id}`}
+                  />
+                  <CheckboxLabel htmlFor={`list-${l.id}`}>{l.name}</CheckboxLabel>
+                </div>
+              ))}
+              {lists.length === 0 && (
+                <span className="text-muted-foreground">No lists yet — create one first.</span>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-4 space-y-2">
+            <FormLabel>
+              Sending connections{" "}
+              <span className="text-muted-foreground text-xs">
+                (primary first, then ordered fallbacks)
+              </span>
+            </FormLabel>
+            <div className="flex flex-wrap items-start gap-3">
+              <select
+                defaultValue=""
+                onChange={(e) => {
+                  addConnection(Number(e.target.value));
+                  e.target.value = "";
+                }}
+                className="border-input w-auto rounded-md border bg-transparent px-3 py-2 text-sm"
+              >
+                <option value="" disabled>
+                  Add a connection…
+                </option>
+                {connections
+                  .filter((c) => !connectionIds.includes(c.id))
+                  .map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} — {c.from_email} ({c.type})
+                    </option>
+                  ))}
+              </select>
+              {connectionIds.length === 0 && (
+                <span className="text-muted-foreground">
+                  No connection selected — at least one is required to send.
+                </span>
+              )}
+            </div>
+            <ol className="mt-2 list-decimal space-y-1 pl-5">
+              {connectionIds.map((id, i) => {
+                const c = connections.find((x) => x.id === id);
+                return (
+                  <li key={id} className="flex items-center gap-1">
+                    <span>
+                      {i === 0 ? (
+                        <strong>primary: </strong>
+                      ) : (
+                        <span className="text-muted-foreground">fallback: </span>
+                      )}
+                      {c ? `${c.name} — ${c.from_email} (${c.type})` : id}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setConnectionIds((ids) => ids.filter((x) => x !== id))}
+                    >
+                      remove
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => moveConnection(i, -1)}
+                      disabled={i === 0}
+                    >
+                      ↑
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => moveConnection(i, 1)}
+                      disabled={i === connectionIds.length - 1}
+                    >
+                      ↓
+                    </Button>
+                  </li>
+                );
+              })}
+            </ol>
+          </div>
+
+          <div className="mt-4 space-y-2">
+            <FormLabel>
+              Campaign throttle{" "}
+              <span className="text-muted-foreground text-xs">
+                (optional, additional cap on top of the connection's own rate limit — blank = no
+                extra cap)
+              </span>
+            </FormLabel>
+            <FormRow>
+              <Input
+                type="number"
+                min={1}
+                value={rateLimitCount}
+                onChange={(e) => setRateLimitCount(e.target.value)}
+                placeholder="e.g. 1"
+              />
+              <DurationInput
+                seconds={rateLimitDurationSeconds}
+                onChange={setRateLimitDurationSeconds}
+                placeholder="e.g. 5"
+              />
+            </FormRow>
+          </div>
+
+          <div className="mt-4 space-y-2">
+            <FormLabel>Send test email</FormLabel>
+            <div className="flex items-center gap-2">
+              <Input
+                type="email"
+                placeholder="you@example.com"
+                value={testEmail}
+                onChange={(e) => setTestEmail(e.target.value)}
+                className="max-w-[280px]"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                disabled={testing || !testEmail}
+                onClick={sendTest}
+              >
+                {testing ? "Sending…" : "Send test"}
+              </Button>
+              {testResult && (
+                <span
+                  className={testResult.ok ? "text-success text-sm" : "text-destructive text-sm"}
+                >
+                  {testResult.ok ? "Test sent" : `Failed: ${testResult.error}`}
+                </span>
+              )}
+            </div>
+            <p className="text-muted-foreground text-xs">
+              Saves this campaign as a draft first (needed to pick a sending connection), then sends
+              a one-off test -- it doesn't count as a real send.
+            </p>
+          </div>
+
+          {error && <p className="text-destructive mt-4 text-sm">{error}</p>}
+          <div className="mt-5">
+            <Button type="submit">Create campaign</Button>
+          </div>
+        </form>
+      </BlockLayout>
 
       {preview && (
         <PreviewModal

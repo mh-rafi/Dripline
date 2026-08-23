@@ -10,6 +10,22 @@ import ContentTypeEditor, {
   type ContentType,
   type ContentValue,
 } from "../components/content-editor/ContentTypeEditor.js";
+import {
+  PageHeaderWrapper,
+  BlockLayout,
+  Button,
+  Input,
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+  Checkbox,
+  CheckboxLabel,
+  FormLabel,
+  FormRow,
+  Skeleton,
+} from "../components/ui/index.js";
 
 interface Analytics {
   opens: number;
@@ -221,237 +237,262 @@ export default function CampaignDetail() {
     }
   }
 
-  if (!campaign) return <p className="muted">Loading…</p>;
+  if (!campaign) return <Skeleton className="h-48" />;
 
   const canEdit = EDITABLE.includes(campaign.status);
 
   if (editing) {
     return (
       <div>
-        <div className="page-header">
-          <h2>Edit campaign</h2>
-          <Badge status={campaign.status} />
-        </div>
+        <PageHeaderWrapper
+          variant="title-with-actions"
+          title="Edit campaign"
+          actions={<Badge status={campaign.status} />}
+        />
 
-        <form
-          className="card"
-          onSubmit={(e) => {
-            e.preventDefault();
-            saveEdit();
-          }}
-        >
-          <div className="form-row">
-            <div>
-              <label>Name (internal)</label>
-              <input required value={name} onChange={(e) => setName(e.target.value)} />
-            </div>
-            <div>
-              <label>From email (optional override)</label>
-              <input
-                type="email"
-                value={fromEmail}
-                onChange={(e) => setFromEmail(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <label>Subject</label>
-          <input required value={subject} onChange={(e) => setSubject(e.target.value)} />
-
-          <label>Template (optional)</label>
-          <select value={templateId} onChange={(e) => setTemplateId(e.target.value)}>
-            <option value="">None</option>
-            {templates.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          </select>
-
-          <label>
-            Body{" "}
-            <span className="muted" style={{ fontSize: 12 }}>
-              (supports {"{{ Subscriber.Name }}"} etc.)
-            </span>
-          </label>
-          <ContentTypeEditor
-            contentType={contentType}
-            value={content}
-            onChangeType={setContentType}
-            onChangeValue={setContent}
-          />
-          <div className="toolbar" style={{ marginTop: 8 }}>
-            <button
-              type="button"
-              className="secondary"
-              onClick={showPreview}
-              disabled={previewLoading}
-            >
-              {previewLoading ? "Loading preview…" : "Preview"}
-            </button>
-            {previewError && <span className="error-text">{previewError}</span>}
-          </div>
-
-          <label>Lists</label>
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-            {lists.map((l) => (
-              <label
-                key={l.id}
-                style={{ display: "flex", alignItems: "center", gap: 6, width: "auto", margin: 0 }}
-              >
-                <input
-                  type="checkbox"
-                  style={{ width: "auto" }}
-                  checked={listIds.includes(l.id)}
-                  onChange={() => toggleList(l.id)}
+        <BlockLayout>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              saveEdit();
+            }}
+          >
+            <FormRow>
+              <div className="space-y-2">
+                <FormLabel required>Name (internal)</FormLabel>
+                <Input required value={name} onChange={(e) => setName(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <FormLabel>From email (optional override)</FormLabel>
+                <Input
+                  type="email"
+                  value={fromEmail}
+                  onChange={(e) => setFromEmail(e.target.value)}
                 />
-                {l.name}
-              </label>
-            ))}
-            {lists.length === 0 && <span className="muted">No lists exist yet.</span>}
-          </div>
+              </div>
+            </FormRow>
 
-          <label>
-            Sending connections{" "}
-            <span className="muted" style={{ fontSize: 12 }}>
-              (primary first, then ordered fallbacks)
-            </span>
-          </label>
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
-            <select
-              defaultValue=""
-              onChange={(e) => {
-                addConnection(Number(e.target.value));
-                e.target.value = "";
-              }}
-              style={{ width: "auto" }}
-            >
-              <option value="" disabled>
-                Add a connection…
-              </option>
-              {connections
-                .filter((c) => !connectionIds.includes(c.id))
-                .map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} — {c.from_email} ({c.type})
-                  </option>
+            <div className="mt-4 space-y-2">
+              <FormLabel required>Subject</FormLabel>
+              <Input required value={subject} onChange={(e) => setSubject(e.target.value)} />
+            </div>
+
+            <div className="mt-4 space-y-2">
+              <FormLabel>Template (optional)</FormLabel>
+              <Select
+                value={templateId || "none"}
+                onValueChange={(v) => setTemplateId(v === "none" ? "" : v)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  {templates.map((t) => (
+                    <SelectItem key={t.id} value={String(t.id)}>
+                      {t.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="mt-4 space-y-2">
+              <FormLabel>
+                Body{" "}
+                <span className="text-muted-foreground text-xs">
+                  (supports {"{{ Subscriber.Name }}"} etc.)
+                </span>
+              </FormLabel>
+              <ContentTypeEditor
+                contentType={contentType}
+                value={content}
+                onChangeType={setContentType}
+                onChangeValue={setContent}
+              />
+              <div className="mt-2 flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={showPreview}
+                  disabled={previewLoading}
+                >
+                  {previewLoading ? "Loading preview…" : "Preview"}
+                </Button>
+                {previewError && <span className="text-destructive text-sm">{previewError}</span>}
+              </div>
+            </div>
+
+            <div className="mt-4 space-y-2">
+              <FormLabel>Lists</FormLabel>
+              <div className="flex flex-wrap gap-3">
+                {lists.map((l) => (
+                  <div key={l.id} className="flex items-center gap-1.5">
+                    <Checkbox
+                      checked={listIds.includes(l.id)}
+                      onCheckedChange={() => toggleList(l.id)}
+                      id={`list-${l.id}`}
+                    />
+                    <CheckboxLabel htmlFor={`list-${l.id}`}>{l.name}</CheckboxLabel>
+                  </div>
                 ))}
-            </select>
-            {connectionIds.length === 0 && (
-              <span className="muted">At least one is required to send.</span>
-            )}
-          </div>
-          <ol style={{ margin: "8px 0 0", paddingLeft: 20 }}>
-            {connectionIds.map((cid, i) => {
-              const c = connections.find((x) => x.id === cid);
-              return (
-                <li key={cid} style={{ marginBottom: 4 }}>
-                  {i === 0 ? <strong>primary: </strong> : <span className="muted">fallback: </span>}
-                  {c ? `${c.name} — ${c.from_email} (${c.type})` : cid}
-                  <button
-                    type="button"
-                    className="secondary"
-                    style={{ marginLeft: 8, padding: "2px 8px" }}
-                    onClick={() => setConnectionIds((ids) => ids.filter((x) => x !== cid))}
-                  >
-                    remove
-                  </button>
-                  <button
-                    type="button"
-                    className="secondary"
-                    style={{ marginLeft: 4, padding: "2px 8px" }}
-                    onClick={() => moveConnection(i, -1)}
-                    disabled={i === 0}
-                  >
-                    ↑
-                  </button>
-                  <button
-                    type="button"
-                    className="secondary"
-                    style={{ marginLeft: 4, padding: "2px 8px" }}
-                    onClick={() => moveConnection(i, 1)}
-                    disabled={i === connectionIds.length - 1}
-                  >
-                    ↓
-                  </button>
-                </li>
-              );
-            })}
-          </ol>
+                {lists.length === 0 && (
+                  <span className="text-muted-foreground">No lists exist yet.</span>
+                )}
+              </div>
+            </div>
 
-          <label>
-            Campaign throttle{" "}
-            <span className="muted" style={{ fontSize: 12 }}>
-              (optional, additional cap on top of the connection's own rate limit — blank = no extra
-              cap)
-            </span>
-          </label>
-          <div className="form-row">
-            <input
-              type="number"
-              min={1}
-              value={rateLimitCount}
-              onChange={(e) => setRateLimitCount(e.target.value)}
-              placeholder="e.g. 1"
-            />
-            <DurationInput
-              key={campaign.id}
-              seconds={rateLimitDurationSeconds}
-              onChange={setRateLimitDurationSeconds}
-              placeholder="e.g. 5"
-            />
-          </div>
+            <div className="mt-4 space-y-2">
+              <FormLabel>
+                Sending connections{" "}
+                <span className="text-muted-foreground text-xs">
+                  (primary first, then ordered fallbacks)
+                </span>
+              </FormLabel>
+              <div className="flex flex-wrap items-start gap-3">
+                <select
+                  defaultValue=""
+                  onChange={(e) => {
+                    addConnection(Number(e.target.value));
+                    e.target.value = "";
+                  }}
+                  className="border-input w-auto rounded-md border bg-transparent px-3 py-2 text-sm"
+                >
+                  <option value="" disabled>
+                    Add a connection…
+                  </option>
+                  {connections
+                    .filter((c) => !connectionIds.includes(c.id))
+                    .map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} — {c.from_email} ({c.type})
+                      </option>
+                    ))}
+                </select>
+                {connectionIds.length === 0 && (
+                  <span className="text-muted-foreground">At least one is required to send.</span>
+                )}
+              </div>
+              <ol className="mt-2 list-decimal space-y-1 pl-5">
+                {connectionIds.map((cid, i) => {
+                  const c = connections.find((x) => x.id === cid);
+                  return (
+                    <li key={cid} className="flex items-center gap-1">
+                      <span>
+                        {i === 0 ? (
+                          <strong>primary: </strong>
+                        ) : (
+                          <span className="text-muted-foreground">fallback: </span>
+                        )}
+                        {c ? `${c.name} — ${c.from_email} (${c.type})` : cid}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setConnectionIds((ids) => ids.filter((x) => x !== cid))}
+                      >
+                        remove
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => moveConnection(i, -1)}
+                        disabled={i === 0}
+                      >
+                        ↑
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => moveConnection(i, 1)}
+                        disabled={i === connectionIds.length - 1}
+                      >
+                        ↓
+                      </Button>
+                    </li>
+                  );
+                })}
+              </ol>
+            </div>
 
-          <label>Send test email</label>
-          <div className="toolbar">
-            <input
-              type="email"
-              placeholder="you@example.com"
-              value={testEmail}
-              onChange={(e) => setTestEmail(e.target.value)}
-              style={{ maxWidth: 280 }}
-            />
-            <button
-              type="button"
-              className="secondary"
-              disabled={testing || !testEmail}
-              onClick={sendTest}
-            >
-              {testing ? "Sending…" : "Send test"}
-            </button>
-            {testResult && (
-              <span
-                style={{
-                  color: testResult.ok ? "var(--success)" : "var(--danger, #c00)",
-                  fontSize: 13,
+            <div className="mt-4 space-y-2">
+              <FormLabel>
+                Campaign throttle{" "}
+                <span className="text-muted-foreground text-xs">
+                  (optional, additional cap on top of the connection's own rate limit — blank = no
+                  extra cap)
+                </span>
+              </FormLabel>
+              <FormRow>
+                <Input
+                  type="number"
+                  min={1}
+                  value={rateLimitCount}
+                  onChange={(e) => setRateLimitCount(e.target.value)}
+                  placeholder="e.g. 1"
+                />
+                <DurationInput
+                  key={campaign.id}
+                  seconds={rateLimitDurationSeconds}
+                  onChange={setRateLimitDurationSeconds}
+                  placeholder="e.g. 5"
+                />
+              </FormRow>
+            </div>
+
+            <div className="mt-4 space-y-2">
+              <FormLabel>Send test email</FormLabel>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="email"
+                  placeholder="you@example.com"
+                  value={testEmail}
+                  onChange={(e) => setTestEmail(e.target.value)}
+                  className="max-w-[280px]"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={testing || !testEmail}
+                  onClick={sendTest}
+                >
+                  {testing ? "Sending…" : "Send test"}
+                </Button>
+                {testResult && (
+                  <span
+                    className={testResult.ok ? "text-success text-sm" : "text-destructive text-sm"}
+                  >
+                    {testResult.ok ? "Test sent" : `Failed: ${testResult.error}`}
+                  </span>
+                )}
+              </div>
+              <p className="text-muted-foreground text-xs">
+                Tests these unsaved edits directly -- it doesn't save them or count as a real send.
+              </p>
+            </div>
+
+            {error && <p className="text-destructive mt-4 text-sm">{error}</p>}
+            <div className="mt-4 flex gap-2">
+              <Button type="submit" disabled={saving}>
+                {saving ? "Saving…" : "Save changes"}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={saving}
+                onClick={() => {
+                  setEditing(false);
+                  load();
                 }}
               >
-                {testResult.ok ? "Test sent" : `Failed: ${testResult.error}`}
-              </span>
-            )}
-          </div>
-          <p className="muted" style={{ fontSize: 12, marginTop: -4 }}>
-            Tests these unsaved edits directly -- it doesn't save them or count as a real send.
-          </p>
-
-          {error && <p className="error-text">{error}</p>}
-          <div className="toolbar" style={{ marginTop: 16 }}>
-            <button type="submit" disabled={saving}>
-              {saving ? "Saving…" : "Save changes"}
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              disabled={saving}
-              onClick={() => {
-                setEditing(false);
-                load();
-              }}
-            >
-              Cancel
-            </button>
-          </div>
-        </form>
+                Cancel
+              </Button>
+            </div>
+          </form>
+        </BlockLayout>
 
         {preview && (
           <PreviewModal
@@ -466,114 +507,113 @@ export default function CampaignDetail() {
 
   return (
     <div>
-      <div className="page-header">
-        <h2>{campaign.name}</h2>
-        <Badge status={campaign.status} />
-      </div>
+      <PageHeaderWrapper
+        variant="title-with-actions"
+        title={campaign.name}
+        actions={<Badge status={campaign.status} />}
+      />
 
-      <div className="card">
+      <BlockLayout>
         <div>
           <strong>Subject:</strong> {campaign.subject}
         </div>
-        <div style={{ marginTop: 8 }}>
+        <div className="mt-2">
           <strong>Lists:</strong>{" "}
-          {campaign.lists?.map((l) => l.name).join(", ") || <span className="muted">none</span>}
+          {campaign.lists?.map((l) => l.name).join(", ") || (
+            <span className="text-muted-foreground">none</span>
+          )}
         </div>
-        <div style={{ marginTop: 8 }}>
+        <div className="mt-2">
           <strong>Connections:</strong>{" "}
           {campaign.connections && campaign.connections.length > 0 ? (
             campaign.connections.map((c, i) => (
-              <span key={c.id} className="muted">
+              <span key={c.id} className="text-muted-foreground">
                 {i === 0 ? `${c.name}` : ` → ${c.name}`}
               </span>
             ))
           ) : (
-            <span className="muted">none</span>
+            <span className="text-muted-foreground">none</span>
           )}
         </div>
-        <div style={{ marginTop: 8 }}>
+        <div className="mt-2">
           <strong>Throttle:</strong>{" "}
           {formatRateLimit(campaign.rate_limit_count, campaign.rate_limit_duration_seconds)}
         </div>
-      </div>
+      </BlockLayout>
 
-      <div className="card">
-        <h3 style={{ marginTop: 0 }}>Progress</h3>
+      <BlockLayout>
+        <h3 className="mt-0 text-lg font-semibold">Progress</h3>
         {campaign.progress && <ProgressBar progress={campaign.progress} />}
-      </div>
+      </BlockLayout>
 
       {analytics && (
-        <div className="card">
-          <h3 style={{ marginTop: 0 }}>Engagement</h3>
-          <div className="form-row">
+        <BlockLayout>
+          <h3 className="mt-0 text-lg font-semibold">Engagement</h3>
+          <FormRow>
             <div>
-              <div className="muted">Opens</div>
-              <div style={{ fontSize: 22 }}>
+              <div className="text-muted-foreground">Opens</div>
+              <div className="text-xl font-semibold">
                 {analytics.unique_opens}{" "}
-                <span className="muted" style={{ fontSize: 14 }}>
-                  ({analytics.opens} total)
-                </span>
+                <span className="text-muted-foreground text-sm">({analytics.opens} total)</span>
               </div>
             </div>
             <div>
-              <div className="muted">Clicks</div>
-              <div style={{ fontSize: 22 }}>
+              <div className="text-muted-foreground">Clicks</div>
+              <div className="text-xl font-semibold">
                 {analytics.unique_clicks}{" "}
-                <span className="muted" style={{ fontSize: 14 }}>
-                  ({analytics.clicks} total)
-                </span>
+                <span className="text-muted-foreground text-sm">({analytics.clicks} total)</span>
               </div>
             </div>
-          </div>
-        </div>
+          </FormRow>
+        </BlockLayout>
       )}
 
-      {error && <p className="error-text">{error}</p>}
+      {error && <p className="text-destructive mt-4 text-sm">{error}</p>}
 
-      <div className="toolbar">
+      <div className="mt-4 flex gap-2">
         {canEdit && (
-          <button disabled={busy} onClick={beginEdit}>
+          <Button disabled={busy} onClick={beginEdit}>
             Edit
-          </button>
+          </Button>
         )}
         {(campaign.status === "draft" ||
           campaign.status === "paused" ||
           campaign.status === "scheduled") && (
-          <button disabled={busy} onClick={() => action(() => api.post(`/campaigns/${id}/start`))}>
+          <Button disabled={busy} onClick={() => action(() => api.post(`/campaigns/${id}/start`))}>
             {campaign.status === "paused" ? "Resume" : "Start sending"}
-          </button>
+          </Button>
         )}
         {campaign.status === "running" && (
-          <button
+          <Button
             disabled={busy}
-            className="secondary"
+            variant="outline"
             onClick={() => action(() => api.post(`/campaigns/${id}/pause`))}
           >
             Pause
-          </button>
+          </Button>
         )}
         {(campaign.status === "running" ||
           campaign.status === "paused" ||
           campaign.status === "draft") && (
-          <button
+          <Button
             disabled={busy}
-            className="danger"
+            variant="destructive"
             onClick={() => action(() => api.post(`/campaigns/${id}/cancel`))}
           >
             Cancel
-          </button>
+          </Button>
         )}
       </div>
 
-      <div className="card">
-        <h3 style={{ marginTop: 0 }}>Body</h3>
-        <div className="toolbar" style={{ marginBottom: 0 }}>
-          <button className="secondary" onClick={showPreview} disabled={previewLoading}>
+      <BlockLayout>
+        <h3 className="mt-0 text-lg font-semibold">Body</h3>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={showPreview} disabled={previewLoading}>
             {previewLoading ? "Loading preview…" : "Preview"}
-          </button>
-          {previewError && <span className="error-text">{previewError}</span>}
+          </Button>
+          {previewError && <span className="text-destructive text-sm">{previewError}</span>}
         </div>
-      </div>
+      </BlockLayout>
 
       {preview && (
         <PreviewModal

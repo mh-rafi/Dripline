@@ -1,0 +1,65 @@
+import * as React from "react";
+import { cva, type VariantProps } from "class-variance-authority";
+import { cn } from "@/lib/utils";
+
+const tagVariants = cva(
+  "inline-flex items-center gap-0 rounded-sm px-2 py-0.5 text-xs font-medium transition-colors",
+  {
+    variants: {
+      variant: {
+        default: "bg-secondary text-secondary-foreground",
+        primary: "bg-primary/10 text-primary border border-primary/20",
+        success: "bg-success/10 text-success border border-success/20",
+        warning: "bg-warning/10 text-warning border border-warning/20",
+        destructive: "bg-destructive/10 text-destructive border border-destructive/20",
+      },
+      removable: { true: "pr-1", false: "" },
+    },
+    defaultVariants: { variant: "default", removable: false },
+  },
+);
+
+export interface TagProps
+  extends React.HTMLAttributes<HTMLSpanElement>, VariantProps<typeof tagVariants> {
+  onRemove?: () => void;
+  children: React.ReactNode;
+}
+
+const Tag = React.forwardRef<HTMLSpanElement, TagProps>(
+  ({ className, variant, removable, onRemove, children, ...props }, ref) => {
+    const isRemovable = removable || !!onRemove;
+    return (
+      <span
+        ref={ref}
+        className={cn(tagVariants({ variant, removable: isRemovable }), className)}
+        {...props}
+      >
+        {children}
+        {isRemovable && onRemove && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemove();
+            }}
+            className="cursor-pointer rounded-sm p-0.5 transition-colors hover:bg-current/20"
+            aria-label="Remove tag"
+          >
+            <svg
+              className="h-3 w-3"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              viewBox="0 0 24 24"
+            >
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
+          </button>
+        )}
+      </span>
+    );
+  },
+);
+Tag.displayName = "Tag";
+
+export { Tag, tagVariants };

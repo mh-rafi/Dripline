@@ -1,6 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import type { SelectQueryBuilder } from "kysely";
 import type { DB } from "../db/kysely.js";
+import type { Database } from "../db/types.js";
 import {
   addTag,
   addToList,
@@ -11,6 +13,9 @@ import {
   removeTag,
   unblocklistSubscriber,
 } from "../services/subscribers.js";
+import type { SubscriberFilter } from "../services/subscriberFilter.js";
+import { bulkBlocklist, bulkDelete, bulkLists } from "../services/bulkActions.js";
+import { exportSubscribers } from "../services/subscriberExport.js";
 
 const CreateSubscriber = z.object({
   email: z.string().email(),
@@ -18,10 +23,6 @@ const CreateSubscriber = z.object({
   status: z.enum(["enabled", "blocklisted"]).default("enabled"),
   attribs: z.record(z.unknown()).optional(),
   list_ids: z.array(z.number().int()).optional(),
-  // Matches listmonk's "Preconfirm subscriptions" checkbox: mark all of the
-  // given lists as 'confirmed' immediately (bypassing the usual
-  // single-vs-double-opt-in default) instead of sending/needing a
-  // confirmation. Useful for known-good imports of already-consented lists.
   preconfirm: z.boolean().default(false),
 });
 const UpdateSubscriber = z.object({
@@ -35,36 +36,72 @@ const ListQuery = z.object({
   offset: z.coerce.number().int().min(0).default(0),
 });
 
+// Bulk selector — either explicit IDs (1-1000 per request, the frontend
+// chunks above that) or a query-mode "select all matching" that re-runs
+// the same server-side filter the list page used.
+const BulkSelector = z.union([
+  z.object({
+    ids: z.array(z.number().int()).min(1).max(1000),
+  }),
+  z.object({
+    query: z.object({ q: z.string().optional(), list_id: z.number().int().optional() }),
+    all: z.literal(true),
+  }),
+]);
+
+/** Applies the subscriber list/search filter to a query builder -- shared
+ * between the paged results query and the total-count query so they can
+ * never drift apart. */
+function applySubscriberFilter<O>(
+  builder: SelectQueryBuilder<Database, "subscribers", O>,
+  filter: SubscriberFilter,
+): SelectQueryBuilder<Database, "subscribers", O> {
+  let b = builder;
+  if (filter.q) {
+    const q = filter.q;
+    b = b.where((eb) => eb.or([eb("email", "ilike", `%${q}%`), eb("name", "ilike", `%${q}%`)]));
+  }
+  if (filter.list_id) {
+    const listId = filter.list_id;
+    b = b.where((eb) =>
+      eb(
+        "subscribers.id",
+        "in",
+        eb.selectFrom("subscriber_lists").select("subscriber_id").where("list_id", "=", listId),
+      ),
+    );
+  }
+  return b;
+}
+
 export default async function subscriberRoutes(app: FastifyInstance, opts: { db: DB }) {
   const { db } = opts;
   app.addHook("preHandler", app.requireAuth);
 
   app.get("/api/v1/subscribers", async (req) => {
     const query = ListQuery.parse(req.query);
-    let builder = db
-      .selectFrom("subscribers")
-      .selectAll()
-      .orderBy("id", "desc")
-      .limit(query.limit)
-      .offset(query.offset);
-    if (query.q) {
-      builder = builder.where((eb) =>
-        eb.or([eb("email", "ilike", `%${query.q}%`), eb("name", "ilike", `%${query.q}%`)]),
-      );
-    }
-    if (query.list_id) {
-      builder = builder.where((eb) =>
-        eb(
-          "subscribers.id",
-          "in",
-          eb
-            .selectFrom("subscriber_lists")
-            .select("subscriber_id")
-            .where("list_id", "=", query.list_id!),
-        ),
-      );
-    }
-    return builder.execute();
+    const filter: SubscriberFilter = { q: query.q, list_id: query.list_id };
+
+    const pageQuery = applySubscriberFilter(
+      db
+        .selectFrom("subscribers")
+        .selectAll()
+        .orderBy("id", "desc")
+        .limit(query.limit)
+        .offset(query.offset),
+      filter,
+    );
+    const totalQuery = applySubscriberFilter(
+      db.selectFrom("subscribers").select(db.fn.countAll().as("count")),
+      filter,
+    );
+
+    const [subscribers, totalResult] = await Promise.all([
+      pageQuery.execute(),
+      totalQuery.executeTakeFirstOrThrow(),
+    ]);
+
+    return { subscribers, total: Number(totalResult.count) };
   });
 
   app.get("/api/v1/subscribers/:id", async (req) => {
@@ -138,9 +175,6 @@ export default async function subscriberRoutes(app: FastifyInstance, opts: { db:
     const { id, listId } = z
       .object({ id: z.coerce.number(), listId: z.coerce.number() })
       .parse(req.params);
-    // No default here -- omitting `status` lets addToList pick the sensible
-    // one for the list's opt-in type (confirmed for single, unconfirmed for
-    // double), rather than always forcing "unconfirmed".
     const { status } = z
       .object({ status: z.enum(["unconfirmed", "confirmed"]).optional() })
       .parse(req.body ?? {});
@@ -170,9 +204,6 @@ export default async function subscriberRoutes(app: FastifyInstance, opts: { db:
 
   const ImportBody = z.object({
     mode: z.enum(["subscribe", "blocklist"]).default("subscribe"),
-    // Only applies in "subscribe" mode -- the status given to every list
-    // membership created by this import, overriding the usual
-    // opt-in-type default (see addToListForImport).
     status: z.enum(["unconfirmed", "confirmed"]).default("confirmed"),
     list_ids: z.array(z.number().int()).default([]),
     overwrite_user_info: z.boolean().default(false),
@@ -235,5 +266,52 @@ export default async function subscriberRoutes(app: FastifyInstance, opts: { db:
       imported++;
     }
     return { imported };
+  });
+
+  // --- Bulk endpoints ---
+
+  app.post("/api/v1/subscribers/bulk/blocklist", async (req) => {
+    const selector = BulkSelector.parse(req.body);
+    const affected = await bulkBlocklist(db, selector);
+    return { affected };
+  });
+
+  app.post("/api/v1/subscribers/bulk/delete", async (req) => {
+    const selector = BulkSelector.parse(req.body);
+    const affected = await bulkDelete(db, selector);
+    return { affected };
+  });
+
+  const BulkListsBody = z
+    .object({
+      list_ids: z.array(z.number().int()).min(1),
+      action: z.enum(["add", "remove"]),
+      status: z.enum(["unconfirmed", "confirmed"]).optional(),
+    })
+    .and(BulkSelector)
+    .superRefine((data, ctx) => {
+      if (data.action === "add" && !data.status) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["status"],
+          message: "status is required when action is 'add'",
+        });
+      }
+    });
+
+  app.post("/api/v1/subscribers/bulk/lists", async (req) => {
+    const body = BulkListsBody.parse(req.body);
+    const selector: { ids: number[] } | { query: SubscriberFilter; all: true } =
+      "ids" in body ? { ids: body.ids } : { query: body.query, all: true };
+    const affected = await bulkLists(db, selector, body.list_ids, body.action, body.status);
+    return { affected };
+  });
+
+  app.post("/api/v1/subscribers/export", async (req, reply) => {
+    const selector = BulkSelector.parse(req.body);
+    const csv = await exportSubscribers(db, selector);
+    reply.header("content-type", "text/csv");
+    reply.header("content-disposition", 'attachment; filename="subscribers.csv"');
+    return reply.send(csv);
   });
 }

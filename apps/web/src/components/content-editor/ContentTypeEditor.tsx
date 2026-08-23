@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import PlainTextEditor from "./PlainTextEditor.js";
 import type { ContentType } from "../../lib/types.js";
 import { convertContent, isLossyTarget, type ContentValue } from "../../lib/contentConversion.js";
+import { Button, Skeleton } from "../ui/index.js";
 
 // Lazy-loaded: TinyMCE, GrapesJS, and CodeMirror are each substantial on
 // their own -- most sessions only ever touch one editing mode, so nobody
@@ -63,16 +64,16 @@ export default function ContentTypeEditor({
 
   return (
     <div>
-      <div className="toolbar" style={{ marginBottom: 8 }}>
+      <div className="mb-2 flex gap-2">
         {CONTENT_TYPES.map((t) => (
-          <button
+          <Button
             key={t.value}
             type="button"
-            className={contentType === t.value ? "" : "secondary"}
+            variant={contentType === t.value ? "default" : "outline"}
             onClick={() => switchTo(t.value)}
           >
             {t.label}
-          </button>
+          </Button>
         ))}
       </div>
 
@@ -82,7 +83,7 @@ export default function ContentTypeEditor({
           onChange={(text) => onChangeValue({ body: text, body_source: text })}
         />
       ) : (
-        <Suspense fallback={<p className="muted">Loading editor…</p>}>
+        <Suspense fallback={<Skeleton className="h-48" />}>
           {contentType === "richtext" && (
             <RichTextEditor
               value={value.body}

@@ -3,80 +3,91 @@ import { Link } from "react-router-dom";
 import { api } from "../lib/api.js";
 import type { Campaign, List, Subscriber } from "../lib/types.js";
 import Badge from "../components/Badge.js";
+import {
+  PageHeaderWrapper,
+  BlockLayout,
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+  TableEmptyState,
+  Typography,
+} from "../components/ui/index.js";
 
 export default function Dashboard() {
-  const [subscribers, setSubscribers] = useState<Subscriber[]>([]);
+  const [subscriberCount, setSubscriberCount] = useState(0);
   const [lists, setLists] = useState<List[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
 
   useEffect(() => {
-    api.get<Subscriber[]>("/subscribers?limit=200").then(setSubscribers);
+    api
+      .get<{ subscribers: Subscriber[]; total: number }>("/subscribers?limit=1")
+      .then((res) => setSubscriberCount(res.total));
     api.get<List[]>("/lists").then(setLists);
     api.get<Campaign[]>("/campaigns").then(setCampaigns);
   }, []);
 
   const running = campaigns.filter((c) => c.status === "running");
-  const subscriberCountLabel = subscribers.length >= 200 ? "200+" : String(subscribers.length);
+
+  const stats = [
+    { label: "Subscribers", value: subscriberCount },
+    { label: "Lists", value: lists.length },
+    { label: "Campaigns", value: campaigns.length },
+    { label: "Running now", value: running.length },
+  ];
 
   return (
     <div>
-      <div className="page-header">
-        <h2>Dashboard</h2>
+      <PageHeaderWrapper variant="title-only" title="Dashboard" />
+
+      <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
+        {stats.map((s) => (
+          <BlockLayout key={s.label} padding="sm">
+            <Typography variant="muted">{s.label}</Typography>
+            <div className="text-2xl font-medium">{s.value}</div>
+          </BlockLayout>
+        ))}
       </div>
 
-      <div className="form-row">
-        <div className="card">
-          <div className="muted">Subscribers</div>
-          <div style={{ fontSize: 28 }}>{subscriberCountLabel}</div>
-        </div>
-        <div className="card">
-          <div className="muted">Lists</div>
-          <div style={{ fontSize: 28 }}>{lists.length}</div>
-        </div>
-        <div className="card">
-          <div className="muted">Campaigns</div>
-          <div style={{ fontSize: 28 }}>{campaigns.length}</div>
-        </div>
-        <div className="card">
-          <div className="muted">Running now</div>
-          <div style={{ fontSize: 28 }}>{running.length}</div>
-        </div>
-      </div>
-
-      <div className="card">
-        <h3 style={{ marginTop: 0 }}>Recent campaigns</h3>
-        <table>
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Status</th>
-              <th>Sent</th>
-            </tr>
-          </thead>
-          <tbody>
+      <BlockLayout>
+        <Typography variant="h3" className="mb-4">
+          Recent campaigns
+        </Typography>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Name</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Sent</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {campaigns.slice(0, 8).map((c) => (
-              <tr key={c.id}>
-                <td>
-                  <Link to={`/campaigns/${c.id}`}>{c.name}</Link>
-                </td>
-                <td>
+              <TableRow key={c.id}>
+                <TableCell>
+                  <Link to={`/campaigns/${c.id}`} className="text-primary hover:underline">
+                    {c.name}
+                  </Link>
+                </TableCell>
+                <TableCell>
                   <Badge status={c.status} />
-                </td>
-                <td>
+                </TableCell>
+                <TableCell>
                   {c.sent} / {c.to_send}
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ))}
-            {campaigns.length === 0 && (
-              <tr>
-                <td colSpan={3} className="muted">
-                  No campaigns yet.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+          </TableBody>
+        </Table>
+        {campaigns.length === 0 && (
+          <TableEmptyState
+            title="No campaigns yet"
+            description="Create your first campaign to get started."
+          />
+        )}
+      </BlockLayout>
     </div>
   );
 }

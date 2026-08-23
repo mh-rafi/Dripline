@@ -1,3 +1,5 @@
+import { Dialog, DialogContent, DialogHeader, DialogTitle, Button } from "./ui/index.js";
+
 interface PreviewModalProps {
   subject?: string;
   html: string;
@@ -10,58 +12,24 @@ interface PreviewModalProps {
  * app's styles. */
 export default function PreviewModal({ subject, html, onClose }: PreviewModalProps) {
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.6)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 1000,
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
       }}
-      onClick={onClose}
     >
-      <div
-        className="card"
-        style={{
-          width: "min(700px, 92vw)",
-          height: "min(800px, 90vh)",
-          display: "flex",
-          flexDirection: "column",
-          padding: 0,
-          overflow: "hidden",
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div
-          style={{
-            padding: "12px 16px",
-            borderBottom: "1px solid var(--border)",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            flexShrink: 0,
-          }}
-        >
+      <DialogContent className="flex h-[min(800px,90vh)] w-[min(700px,92vw)] max-w-3xl flex-col p-0">
+        <DialogHeader className="border-border flex-row items-center justify-between space-y-0 border-b px-4 py-3">
           <div>
-            <strong>Preview</strong>
-            {subject && (
-              <div className="muted" style={{ fontSize: 13 }}>
-                {subject}
-              </div>
-            )}
+            <DialogTitle className="text-base">Preview</DialogTitle>
+            {subject && <p className="text-muted-foreground text-sm">{subject}</p>}
           </div>
-          <button type="button" className="secondary" onClick={onClose}>
+          <Button variant="outline" size="sm" onClick={onClose}>
             Close
-          </button>
-        </div>
-        <iframe
-          title="Email preview"
-          srcDoc={html}
-          style={{ flex: 1, border: "none", background: "#ffffff" }}
-        />
-      </div>
-    </div>
+          </Button>
+        </DialogHeader>
+        <iframe title="Email preview" srcDoc={html} className="flex-1 border-none bg-white" />
+      </DialogContent>
+    </Dialog>
   );
 }

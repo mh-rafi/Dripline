@@ -1,6 +1,23 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api.js";
 import type { ApiKey } from "../lib/types.js";
+import {
+  PageHeaderWrapper,
+  BlockLayout,
+  Button,
+  Input,
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+  TableEmptyState,
+  Alert,
+  Popconfirm,
+  Typography,
+  toast,
+} from "../components/ui/index.js";
 
 export default function Settings() {
   const [keys, setKeys] = useState<ApiKey[]>([]);
@@ -21,78 +38,92 @@ export default function Settings() {
   }
 
   async function remove(id: number) {
-    if (!confirm("Revoke this API key?")) return;
     await api.delete(`/api-keys/${id}`);
     load();
+    toast.success("API key revoked");
   }
 
   return (
     <div>
-      <div className="page-header">
-        <h2>Settings</h2>
-      </div>
+      <PageHeaderWrapper variant="title-only" title="Settings" />
 
-      <div className="card">
-        <h3 style={{ marginTop: 0 }}>API keys</h3>
-        <p className="muted">
+      <BlockLayout>
+        <Typography variant="h3" className="mb-2">
+          API keys
+        </Typography>
+        <Typography variant="muted" className="mb-4">
           Use an API key to integrate external services with Dripline's HTTP API (create
           subscribers, trigger webhooks, etc).
-        </p>
+        </Typography>
 
         {revealed && (
-          <div className="card" style={{ borderColor: "var(--accent)" }}>
-            <strong>Copy this key now — it won't be shown again:</strong>
-            <pre>{revealed}</pre>
-            <button className="secondary" onClick={() => setRevealed(null)}>
-              Dismiss
-            </button>
-          </div>
+          <Alert variant="warning" className="mb-4">
+            <div>
+              <strong>Copy this key now — it won't be shown again:</strong>
+              <pre className="bg-muted mt-2 overflow-auto rounded-md p-2 font-mono text-sm">
+                {revealed}
+              </pre>
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-2"
+                onClick={() => setRevealed(null)}
+              >
+                Dismiss
+              </Button>
+            </div>
+          </Alert>
         )}
 
-        <form className="toolbar" onSubmit={create}>
-          <input
+        <form className="mb-4 flex gap-2" onSubmit={create}>
+          <Input
             placeholder="Key name, e.g. 'CRM integration'"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            style={{ maxWidth: 280 }}
+            className="max-w-xs"
           />
-          <button type="submit">Generate key</button>
+          <Button type="submit">Generate key</Button>
         </form>
 
-        <table>
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Prefix</th>
-              <th>Last used</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Name</TableHead>
+              <TableHead>Prefix</TableHead>
+              <TableHead>Last used</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {keys.map((k) => (
-              <tr key={k.id}>
-                <td>{k.name}</td>
-                <td className="muted">{k.key_prefix}</td>
-                <td className="muted">
+              <TableRow key={k.id}>
+                <TableCell>{k.name}</TableCell>
+                <TableCell className="text-muted-foreground font-mono">{k.key_prefix}</TableCell>
+                <TableCell className="text-muted-foreground">
                   {k.last_used_at ? new Date(k.last_used_at).toLocaleString() : "never"}
-                </td>
-                <td>
-                  <button className="secondary" onClick={() => remove(k.id)}>
-                    Revoke
-                  </button>
-                </td>
-              </tr>
+                </TableCell>
+                <TableCell className="text-right">
+                  <Popconfirm
+                    description="Revoke this API key?"
+                    onConfirm={() => remove(k.id)}
+                    confirmText="Revoke"
+                  >
+                    <Button variant="outline" size="sm">
+                      Revoke
+                    </Button>
+                  </Popconfirm>
+                </TableCell>
+              </TableRow>
             ))}
-            {keys.length === 0 && (
-              <tr>
-                <td colSpan={4} className="muted">
-                  No API keys yet.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+          </TableBody>
+        </Table>
+        {keys.length === 0 && (
+          <TableEmptyState
+            title="No API keys yet"
+            description="Generate a key to enable external API access."
+          />
+        )}
+      </BlockLayout>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/auth.js";
+import { Button, Input, FormLabel, Alert } from "../components/ui/index.js";
 
 export default function Login() {
   const { login, setup } = useAuth();
@@ -31,46 +32,52 @@ export default function Login() {
   }
 
   return (
-    <div className="center-screen">
-      <div className="card auth-box">
-        <h2 style={{ marginTop: 0 }}>Dripline</h2>
-        <p className="muted" style={{ marginTop: -8 }}>
-          {mode === "setup" ? "Create the first admin account" : "Sign in"}
-        </p>
-        <form onSubmit={handleSubmit}>
-          {mode === "setup" && (
-            <>
-              <label>Name</label>
-              <input value={name} onChange={(e) => setName(e.target.value)} />
-            </>
-          )}
-          <label>Email</label>
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-          <label>Password</label>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            minLength={8}
-          />
-          {error && <p className="error-text">{error}</p>}
-          <div style={{ marginTop: 20 }}>
-            <button type="submit" disabled={busy} style={{ width: "100%" }}>
-              {mode === "setup" ? "Create account" : "Sign in"}
-            </button>
-          </div>
-        </form>
-        <p style={{ fontSize: 12, marginTop: 16 }}>
+    <div className="bg-background flex min-h-screen items-center justify-center p-4">
+      <div className="w-[340px]">
+        <div className="border-border bg-block-layout rounded-lg border p-6 shadow-sm">
+          <h2 className="mb-1 text-xl font-medium">Dripline</h2>
+          <p className="text-muted-foreground mb-4 text-sm">
+            {mode === "setup" ? "Create the first admin account" : "Sign in"}
+          </p>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {mode === "setup" && (
+              <div className="space-y-2">
+                <FormLabel>Name</FormLabel>
+                <Input value={name} onChange={(e) => setName(e.target.value)} />
+              </div>
+            )}
+            <div className="space-y-2">
+              <FormLabel required>Email</FormLabel>
+              <Input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <FormLabel required>Password</FormLabel>
+              <Input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                minLength={8}
+              />
+            </div>
+            {error && <Alert variant="destructive">{error}</Alert>}
+            <Button type="submit" disabled={busy} className="w-full">
+              {busy ? "..." : mode === "setup" ? "Create account" : "Sign in"}
+            </Button>
+          </form>
           <button
             type="button"
-            className="secondary"
-            style={{ padding: "4px 8px", fontSize: 12 }}
             onClick={() => setMode((m) => (m === "login" ? "setup" : "login"))}
+            className="text-primary mt-4 text-xs hover:underline"
           >
             {mode === "setup" ? "I already have an account" : "First-time setup instead"}
           </button>
-        </p>
+        </div>
       </div>
     </div>
   );

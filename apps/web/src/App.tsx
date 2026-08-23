@@ -18,7 +18,12 @@ import Settings from "./pages/Settings.js";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
-  if (loading) return <div className="center-screen muted">Loading…</div>;
+  if (loading)
+    return (
+      <div className="text-muted-foreground flex min-h-screen items-center justify-center">
+        Loading…
+      </div>
+    );
   if (!user) return <Navigate to="/login" replace />;
   return <>{children}</>;
 }

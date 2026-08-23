@@ -1,4 +1,12 @@
 import { useState } from "react";
+import {
+  Input,
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectItem,
+  SelectContent,
+} from "./ui/index.js";
 
 const UNITS = [
   { label: "seconds", mult: 1 },
@@ -13,20 +21,11 @@ function pickUnitMult(seconds: number): number {
 }
 
 interface DurationInputProps {
-  /** Total seconds, or null/undefined for "unset". */
   seconds: number | null | undefined;
   onChange: (seconds: number | null) => void;
   placeholder?: string;
 }
 
-/**
- * A number input + unit (seconds/minutes/hours) dropdown that together edit
- * a single total-seconds value. Initializes its displayed unit from the
- * incoming value (e.g. 900 shows as "15 minutes"), then edits independently
- * of further prop changes -- key this component by record id so switching
- * between records (e.g. add vs. edit, or editing a different row) remounts
- * it with a fresh initial value instead of fighting the user's typing.
- */
 export default function DurationInput({ seconds, onChange, placeholder }: DurationInputProps) {
   const initialMult = seconds ? pickUnitMult(seconds) : 60;
   const [unitMult, setUnitMult] = useState(initialMult);
@@ -37,9 +36,11 @@ export default function DurationInput({ seconds, onChange, placeholder }: Durati
     onChange(nextValueStr !== "" && n > 0 ? Math.round(n * nextUnitMult) : null);
   }
 
+  const unitValue = String(unitMult);
+
   return (
-    <div style={{ display: "flex", gap: 8 }}>
-      <input
+    <div className="flex gap-2">
+      <Input
         type="number"
         min={1}
         value={valueStr}
@@ -48,23 +49,27 @@ export default function DurationInput({ seconds, onChange, placeholder }: Durati
           setValueStr(e.target.value);
           emit(e.target.value, unitMult);
         }}
-        style={{ flex: 1 }}
+        className="flex-1"
       />
-      <select
-        value={unitMult}
-        onChange={(e) => {
-          const next = Number(e.target.value);
+      <Select
+        value={unitValue}
+        onValueChange={(v) => {
+          const next = Number(v);
           setUnitMult(next);
           emit(valueStr, next);
         }}
-        style={{ width: "auto" }}
       >
-        {UNITS.map((u) => (
-          <option key={u.label} value={u.mult}>
-            {u.label}
-          </option>
-        ))}
-      </select>
+        <SelectTrigger width="auto" className="w-32">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {UNITS.map((u) => (
+            <SelectItem key={u.label} value={String(u.mult)}>
+              {u.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
   );
 }

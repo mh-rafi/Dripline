@@ -3,6 +3,25 @@ import { Link, useNavigate } from "react-router-dom";
 import { api } from "../lib/api.js";
 import type { Workflow } from "../lib/types.js";
 import Badge from "../components/Badge.js";
+import {
+  PageHeaderWrapper,
+  BlockLayout,
+  Button,
+  Input,
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+  FormLabel,
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+  TableEmptyState,
+} from "../components/ui/index.js";
 
 export default function Workflows() {
   const navigate = useNavigate();
@@ -35,64 +54,79 @@ export default function Workflows() {
 
   return (
     <div>
-      <div className="page-header">
-        <h2>Workflows</h2>
-        <button onClick={() => setShowForm((v) => !v)}>
-          {showForm ? "Cancel" : "New workflow"}
-        </button>
-      </div>
+      <PageHeaderWrapper
+        variant="title-with-actions"
+        title="Workflows"
+        actions={
+          <Button onClick={() => setShowForm((v) => !v)}>
+            {showForm ? "Cancel" : "New workflow"}
+          </Button>
+        }
+      />
 
       {showForm && (
-        <form className="card" onSubmit={create}>
-          <label>Name</label>
-          <input required value={name} onChange={(e) => setName(e.target.value)} />
-          <label>Trigger</label>
-          <select
-            value={triggerType}
-            onChange={(e) => setTriggerType(e.target.value as Workflow["trigger_type"])}
-          >
-            <option value="manual">Manual enrollment (via API)</option>
-            <option value="list_joined">Subscriber joins a list</option>
-            <option value="tag_applied">Tag applied</option>
-            <option value="webhook">Webhook received</option>
-            <option value="link_clicked">Campaign link clicked</option>
-          </select>
-          {error && <p className="error-text">{error}</p>}
-          <div style={{ marginTop: 16 }}>
-            <button type="submit">Create draft</button>
-          </div>
-        </form>
+        <BlockLayout className="mb-6">
+          <form onSubmit={create} className="space-y-4">
+            <div className="space-y-2">
+              <FormLabel required>Name</FormLabel>
+              <Input required value={name} onChange={(e) => setName(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <FormLabel>Trigger</FormLabel>
+              <Select
+                value={triggerType}
+                onValueChange={(v) => setTriggerType(v as Workflow["trigger_type"])}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="manual">Manual enrollment (via API)</SelectItem>
+                  <SelectItem value="list_joined">Subscriber joins a list</SelectItem>
+                  <SelectItem value="tag_applied">Tag applied</SelectItem>
+                  <SelectItem value="webhook">Webhook received</SelectItem>
+                  <SelectItem value="link_clicked">Campaign link clicked</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {error && <p className="text-destructive text-sm">{error}</p>}
+            <Button type="submit">Create draft</Button>
+          </form>
+        </BlockLayout>
       )}
 
-      <table>
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Trigger</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {workflows.map((w) => (
-            <tr key={w.id}>
-              <td>
-                <Link to={`/workflows/${w.id}`}>{w.name}</Link>
-              </td>
-              <td className="muted">{w.trigger_type}</td>
-              <td>
-                <Badge status={w.status} />
-              </td>
-            </tr>
-          ))}
-          {workflows.length === 0 && (
-            <tr>
-              <td colSpan={3} className="muted">
-                No workflows yet.
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+      <BlockLayout padding="sm">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Name</TableHead>
+              <TableHead>Trigger</TableHead>
+              <TableHead>Status</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {workflows.map((w) => (
+              <TableRow key={w.id}>
+                <TableCell>
+                  <Link to={`/workflows/${w.id}`} className="text-primary hover:underline">
+                    {w.name}
+                  </Link>
+                </TableCell>
+                <TableCell className="text-muted-foreground">{w.trigger_type}</TableCell>
+                <TableCell>
+                  <Badge status={w.status} />
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+        {workflows.length === 0 && (
+          <TableEmptyState
+            title="No workflows yet"
+            description="Create a workflow to automate your email sequences."
+          />
+        )}
+      </BlockLayout>
     </div>
   );
 }

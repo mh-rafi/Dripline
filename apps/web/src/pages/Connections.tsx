@@ -2,6 +2,32 @@ import { useEffect, useState } from "react";
 import { api } from "../lib/api.js";
 import type { AuthMethod, Connection, ConnectionType, TlsMode } from "../lib/types.js";
 import DurationInput from "../components/DurationInput.js";
+import {
+  PageHeaderWrapper,
+  BlockLayout,
+  Button,
+  Input,
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+  Checkbox,
+  CheckboxLabel,
+  Switch,
+  FormLabel,
+  FormRow,
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+  TableEmptyState,
+  Popconfirm,
+  Alert,
+  toast,
+} from "../components/ui/index.js";
 
 const TLS_MODES: TlsMode[] = ["none", "starttls", "tls"];
 const AUTH_METHODS: AuthMethod[] = ["none", "login", "plain", "cram-md5"];
@@ -146,9 +172,6 @@ export default function Connections() {
     setTesting(true);
     setTestResult(null);
     try {
-      // For an existing row that hasn't been re-saved, test the persisted
-      // config (the real secret isn't available client-side). For a new draft,
-      // test the form values directly.
       const result =
         form.id !== undefined
           ? await api.post<TestState>(`/connections/${form.id}/test`)
@@ -184,6 +207,7 @@ export default function Connections() {
           list_unsubscribe_header: form.list_unsubscribe_header,
           config,
         });
+        toast.success("Connection updated");
       } else {
         await api.post("/connections", {
           name: form.name,
@@ -195,6 +219,7 @@ export default function Connections() {
           list_unsubscribe_header: form.list_unsubscribe_header,
           config,
         });
+        toast.success("Connection created");
       }
       setShowForm(false);
       load();
@@ -213,305 +238,345 @@ export default function Connections() {
   }
 
   async function remove(id: number) {
-    if (!confirm("Delete this connection?")) return;
     await api.delete(`/connections/${id}`);
     load();
+    toast.success("Connection deleted");
   }
 
   const editing = form.id !== undefined;
 
   return (
     <div>
-      <div className="page-header">
-        <h2>Sending connections</h2>
-        <button onClick={() => (showForm ? setShowForm(false) : startAdd())}>
-          {showForm ? "Cancel" : "Add connection"}
-        </button>
-      </div>
+      <PageHeaderWrapper
+        variant="title-with-actions"
+        title="Sending connections"
+        actions={
+          <Button onClick={() => (showForm ? setShowForm(false) : startAdd())}>
+            {showForm ? "Cancel" : "Add connection"}
+          </Button>
+        }
+      />
 
-      <p className="muted">
+      <p className="text-muted-foreground mb-6 text-sm">
         Each connection is a distinct sending identity (SMTP or AWS SES). Campaigns and automation
         steps pick a primary connection and optional ordered fallbacks — there is no automatic pool,
         so each site's mail stays on its own domain.
       </p>
 
       {showForm && (
-        <form className="card" onSubmit={submit}>
-          <div className="form-row">
-            <div>
-              <label>Name</label>
-              <input required value={form.name} onChange={(e) => set("name", e.target.value)} />
-            </div>
-            <div>
-              <label>Type</label>
-              <select
-                value={form.type}
-                onChange={(e) => set("type", e.target.value as ConnectionType)}
-              >
-                <option value="smtp">SMTP</option>
-                <option value="ses">AWS SES</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="form-row">
-            <div>
-              <label>From email</label>
-              <input
-                type="email"
-                required
-                value={form.from_email}
-                onChange={(e) => set("from_email", e.target.value)}
-              />
-            </div>
-            <div>
-              <label>From name (optional)</label>
-              <input value={form.from_name} onChange={(e) => set("from_name", e.target.value)} />
-            </div>
-          </div>
-
-          {form.type === "smtp" ? (
-            <>
-              <div className="form-row">
-                <div>
-                  <label>SMTP host</label>
-                  <input required value={form.host} onChange={(e) => set("host", e.target.value)} />
-                </div>
-                <div>
-                  <label>Port</label>
-                  <input
-                    type="number"
-                    value={form.port}
-                    onChange={(e) => set("port", Number(e.target.value))}
-                  />
-                </div>
+        <BlockLayout className="mb-6">
+          <form onSubmit={submit} className="space-y-4">
+            <FormRow>
+              <div className="space-y-2">
+                <FormLabel required>Name</FormLabel>
+                <Input required value={form.name} onChange={(e) => set("name", e.target.value)} />
               </div>
-
-              <div className="form-row">
-                <div>
-                  <label>TLS mode</label>
-                  <select
-                    value={form.tls_mode}
-                    onChange={(e) => set("tls_mode", e.target.value as TlsMode)}
-                  >
-                    {TLS_MODES.map((m) => (
-                      <option key={m} value={m}>
-                        {m === "none"
-                          ? "None (no encryption)"
-                          : m === "starttls"
-                            ? "STARTTLS"
-                            : "SSL/TLS (implicit)"}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label>Auth method</label>
-                  <select
-                    value={form.auth_method}
-                    onChange={(e) => set("auth_method", e.target.value as AuthMethod)}
-                  >
-                    {AUTH_METHODS.map((m) => (
-                      <option key={m} value={m}>
-                        {m}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+              <div className="space-y-2">
+                <FormLabel>Type</FormLabel>
+                <Select value={form.type} onValueChange={(v) => set("type", v as ConnectionType)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="smtp">SMTP</SelectItem>
+                    <SelectItem value="ses">AWS SES</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
+            </FormRow>
 
-              <div className="form-row">
-                <div>
-                  <label>Username</label>
-                  <input
-                    value={form.username}
-                    onChange={(e) => set("username", e.target.value)}
-                    disabled={form.auth_method === "none"}
-                  />
-                </div>
-                <div>
-                  <label>
-                    Password{" "}
-                    {editing && <span className="muted">(leave blank to keep current)</span>}
-                  </label>
-                  <input
-                    type="password"
-                    value={form.password}
-                    onChange={(e) => set("password", e.target.value)}
-                    placeholder={editing ? "••••••••" : ""}
-                    disabled={form.auth_method === "none"}
-                  />
-                </div>
-              </div>
-
-              <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <input
-                  type="checkbox"
-                  style={{ width: "auto" }}
-                  checked={form.tls_skip_verify}
-                  onChange={(e) => set("tls_skip_verify", e.target.checked)}
+            <FormRow>
+              <div className="space-y-2">
+                <FormLabel required>From email</FormLabel>
+                <Input
+                  type="email"
+                  required
+                  value={form.from_email}
+                  onChange={(e) => set("from_email", e.target.value)}
                 />
-                Skip TLS certificate verification
-              </label>
-            </>
-          ) : (
-            <>
-              <div className="form-row">
-                <div>
-                  <label>AWS region</label>
-                  <input
-                    required
-                    value={form.region}
-                    onChange={(e) => set("region", e.target.value)}
+              </div>
+              <div className="space-y-2">
+                <FormLabel>From name (optional)</FormLabel>
+                <Input value={form.from_name} onChange={(e) => set("from_name", e.target.value)} />
+              </div>
+            </FormRow>
+
+            {form.type === "smtp" ? (
+              <>
+                <FormRow>
+                  <div className="space-y-2">
+                    <FormLabel required>SMTP host</FormLabel>
+                    <Input
+                      required
+                      value={form.host}
+                      onChange={(e) => set("host", e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <FormLabel>Port</FormLabel>
+                    <Input
+                      type="number"
+                      value={form.port}
+                      onChange={(e) => set("port", Number(e.target.value))}
+                    />
+                  </div>
+                </FormRow>
+
+                <FormRow>
+                  <div className="space-y-2">
+                    <FormLabel>TLS mode</FormLabel>
+                    <Select
+                      value={form.tls_mode}
+                      onValueChange={(v) => set("tls_mode", v as TlsMode)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {TLS_MODES.map((m) => (
+                          <SelectItem key={m} value={m}>
+                            {m === "none"
+                              ? "None (no encryption)"
+                              : m === "starttls"
+                                ? "STARTTLS"
+                                : "SSL/TLS (implicit)"}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <FormLabel>Auth method</FormLabel>
+                    <Select
+                      value={form.auth_method}
+                      onValueChange={(v) => set("auth_method", v as AuthMethod)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {AUTH_METHODS.map((m) => (
+                          <SelectItem key={m} value={m}>
+                            {m}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </FormRow>
+
+                <FormRow>
+                  <div className="space-y-2">
+                    <FormLabel>Username</FormLabel>
+                    <Input
+                      value={form.username}
+                      onChange={(e) => set("username", e.target.value)}
+                      disabled={form.auth_method === "none"}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <FormLabel>
+                      Password{" "}
+                      {editing && (
+                        <span className="text-muted-foreground font-normal">
+                          (leave blank to keep current)
+                        </span>
+                      )}
+                    </FormLabel>
+                    <Input
+                      type="password"
+                      value={form.password}
+                      onChange={(e) => set("password", e.target.value)}
+                      placeholder={editing ? "••••••••" : ""}
+                      disabled={form.auth_method === "none"}
+                    />
+                  </div>
+                </FormRow>
+
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    checked={form.tls_skip_verify}
+                    onCheckedChange={(v) => set("tls_skip_verify", v === true)}
+                    id="tls_skip"
                   />
+                  <CheckboxLabel htmlFor="tls_skip">
+                    Skip TLS certificate verification
+                  </CheckboxLabel>
                 </div>
-                <div>
-                  <label>Access key ID</label>
-                  <input
-                    value={form.access_key_id}
-                    onChange={(e) => set("access_key_id", e.target.value)}
+              </>
+            ) : (
+              <>
+                <FormRow>
+                  <div className="space-y-2">
+                    <FormLabel required>AWS region</FormLabel>
+                    <Input
+                      required
+                      value={form.region}
+                      onChange={(e) => set("region", e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <FormLabel>Access key ID</FormLabel>
+                    <Input
+                      value={form.access_key_id}
+                      onChange={(e) => set("access_key_id", e.target.value)}
+                      disabled={form.use_iam_role}
+                    />
+                  </div>
+                </FormRow>
+                <div className="space-y-2">
+                  <FormLabel>
+                    Secret access key{" "}
+                    {editing && (
+                      <span className="text-muted-foreground font-normal">
+                        (leave blank to keep current)
+                      </span>
+                    )}
+                  </FormLabel>
+                  <Input
+                    type="password"
+                    value={form.secret_access_key}
+                    onChange={(e) => set("secret_access_key", e.target.value)}
+                    placeholder={editing ? "••••••••" : ""}
                     disabled={form.use_iam_role}
                   />
                 </div>
-              </div>
-              <label>
-                Secret access key{" "}
-                {editing && <span className="muted">(leave blank to keep current)</span>}
-              </label>
-              <input
-                type="password"
-                value={form.secret_access_key}
-                onChange={(e) => set("secret_access_key", e.target.value)}
-                placeholder={editing ? "••••••••" : ""}
-                disabled={form.use_iam_role}
-              />
-              <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}>
-                <input
-                  type="checkbox"
-                  style={{ width: "auto" }}
-                  checked={form.use_iam_role}
-                  onChange={(e) => set("use_iam_role", e.target.checked)}
-                />
-                Use ambient IAM / instance role (no static keys)
-              </label>
-            </>
-          )}
-
-          <div className="form-row" style={{ marginTop: 16 }}>
-            <div>
-              <label>Rate limit — count (blank = unlimited)</label>
-              <input
-                type="number"
-                min={1}
-                value={form.rate_limit_count}
-                onChange={(e) => set("rate_limit_count", e.target.value)}
-                placeholder="e.g. 100"
-              />
-            </div>
-            <div>
-              <label>Rate limit — window</label>
-              <DurationInput
-                key={form.id ?? "new"}
-                seconds={form.rate_limit_duration_seconds}
-                onChange={(s) => set("rate_limit_duration_seconds", s)}
-                placeholder="e.g. 15"
-              />
-            </div>
-          </div>
-          <p className="muted" style={{ fontSize: 12 }}>
-            The rate limit is enforced globally across every campaign/workflow using this
-            connection. Optional campaign throttling can only slow a send down further.
-          </p>
-
-          <label style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 16 }}>
-            <span className="switch">
-              <input
-                type="checkbox"
-                checked={form.list_unsubscribe_header}
-                onChange={(e) => set("list_unsubscribe_header", e.target.checked)}
-              />
-              <span className="slider" />
-            </span>
-            Send List-Unsubscribe header
-          </label>
-          <p className="muted" style={{ fontSize: 12 }}>
-            Adds a one-click unsubscribe header to every email sent through this connection, on top
-            of the unsubscribe link in the body. Improves inbox placement and is required by
-            Gmail/Yahoo's bulk sender rules -- leave this on unless you have a specific reason not
-            to.
-          </p>
-
-          <div className="toolbar" style={{ marginTop: 16 }}>
-            <button type="submit">{editing ? "Save changes" : "Save connection"}</button>
-            <button type="button" className="secondary" disabled={testing} onClick={testConnection}>
-              {testing ? "Testing…" : "Test connection"}
-            </button>
-            {testResult && (
-              <span
-                style={{
-                  color: testResult.ok ? "var(--success)" : "var(--danger, #c00)",
-                  fontSize: 13,
-                }}
-              >
-                {testResult.ok ? "Connection OK" : `Failed: ${testResult.error}`}
-              </span>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    checked={form.use_iam_role}
+                    onCheckedChange={(v) => set("use_iam_role", v === true)}
+                    id="iam_role"
+                  />
+                  <CheckboxLabel htmlFor="iam_role">
+                    Use ambient IAM / instance role (no static keys)
+                  </CheckboxLabel>
+                </div>
+              </>
             )}
-          </div>
-          {error && <p className="error-text">{error}</p>}
-        </form>
+
+            <FormRow>
+              <div className="space-y-2">
+                <FormLabel>Rate limit — count (blank = unlimited)</FormLabel>
+                <Input
+                  type="number"
+                  min={1}
+                  value={form.rate_limit_count}
+                  onChange={(e) => set("rate_limit_count", e.target.value)}
+                  placeholder="e.g. 100"
+                />
+              </div>
+              <div className="space-y-2">
+                <FormLabel>Rate limit — window</FormLabel>
+                <DurationInput
+                  key={form.id ?? "new"}
+                  seconds={form.rate_limit_duration_seconds}
+                  onChange={(s) => set("rate_limit_duration_seconds", s)}
+                  placeholder="e.g. 15"
+                />
+              </div>
+            </FormRow>
+            <p className="text-muted-foreground text-xs">
+              The rate limit is enforced globally across every campaign/workflow using this
+              connection. Optional campaign throttling can only slow a send down further.
+            </p>
+
+            <div className="flex items-center gap-3">
+              <Switch
+                checked={form.list_unsubscribe_header}
+                onCheckedChange={(v) => set("list_unsubscribe_header", v === true)}
+              />
+              <span className="text-sm">Send List-Unsubscribe header</span>
+            </div>
+            <p className="text-muted-foreground text-xs">
+              Adds a one-click unsubscribe header to every email sent through this connection, on
+              top of the unsubscribe link in the body. Improves inbox placement and is required by
+              Gmail/Yahoo's bulk sender rules — leave this on unless you have a specific reason not
+              to.
+            </p>
+
+            <div className="flex items-center gap-2">
+              <Button type="submit">{editing ? "Save changes" : "Save connection"}</Button>
+              <Button type="button" variant="outline" disabled={testing} onClick={testConnection}>
+                {testing ? "Testing…" : "Test connection"}
+              </Button>
+              {testResult && (
+                <span
+                  className={testResult.ok ? "text-success text-sm" : "text-destructive text-sm"}
+                >
+                  {testResult.ok ? "Connection OK" : `Failed: ${testResult.error}`}
+                </span>
+              )}
+            </div>
+            {error && <Alert variant="destructive">{error}</Alert>}
+          </form>
+        </BlockLayout>
       )}
 
-      <table>
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Type</th>
-            <th>From</th>
-            <th>Rate limit</th>
-            <th>Status</th>
-            <th />
-          </tr>
-        </thead>
-        <tbody>
-          {connections.map((c) => (
-            <tr key={c.id}>
-              <td>{c.name}</td>
-              <td className="muted">{configSummary(c)}</td>
-              <td className="muted">
-                {c.from_name ? `${c.from_name} <${c.from_email}>` : c.from_email}
-              </td>
-              <td className="muted">{rateLimitSummary(c)}</td>
-              <td>
-                {c.enabled ? (
-                  <span className="badge running">enabled</span>
-                ) : (
-                  <span className="badge cancelled" title={c.disabled_reason ?? ""}>
-                    disabled
-                  </span>
-                )}
-              </td>
-              <td className="toolbar" style={{ marginBottom: 0 }}>
-                <button className="secondary" onClick={() => startEdit(c)}>
-                  Edit
-                </button>
-                <button className="secondary" onClick={() => toggleEnable(c)}>
-                  {c.enabled ? "Disable" : "Enable"}
-                </button>
-                <button className="secondary" onClick={() => remove(c.id)}>
-                  Delete
-                </button>
-              </td>
-            </tr>
-          ))}
-          {connections.length === 0 && (
-            <tr>
-              <td colSpan={6} className="muted">
-                No connections configured — campaigns can't send until at least one is added.
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+      <BlockLayout padding="sm">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Name</TableHead>
+              <TableHead>Type</TableHead>
+              <TableHead>From</TableHead>
+              <TableHead>Rate limit</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {connections.map((c) => (
+              <TableRow key={c.id}>
+                <TableCell>{c.name}</TableCell>
+                <TableCell className="text-muted-foreground">{configSummary(c)}</TableCell>
+                <TableCell className="text-muted-foreground">
+                  {c.from_name ? `${c.from_name} <${c.from_email}>` : c.from_email}
+                </TableCell>
+                <TableCell className="text-muted-foreground">{rateLimitSummary(c)}</TableCell>
+                <TableCell>
+                  {c.enabled ? (
+                    <span className="bg-success/15 text-success inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium">
+                      enabled
+                    </span>
+                  ) : (
+                    <span
+                      className="bg-destructive/15 text-destructive inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium"
+                      title={c.disabled_reason ?? ""}
+                    >
+                      disabled
+                    </span>
+                  )}
+                </TableCell>
+                <TableCell className="text-right">
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" size="sm" onClick={() => startEdit(c)}>
+                      Edit
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => toggleEnable(c)}>
+                      {c.enabled ? "Disable" : "Enable"}
+                    </Button>
+                    <Popconfirm
+                      description="Delete this connection?"
+                      onConfirm={() => remove(c.id)}
+                      confirmText="Delete"
+                    >
+                      <Button variant="outline" size="sm">
+                        Delete
+                      </Button>
+                    </Popconfirm>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+        {connections.length === 0 && (
+          <TableEmptyState
+            title="No connections configured"
+            description="Campaigns can't send until at least one is added."
+          />
+        )}
+      </BlockLayout>
     </div>
   );
 }

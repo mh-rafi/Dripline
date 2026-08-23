@@ -3,6 +3,25 @@ import { useParams } from "react-router-dom";
 import { api } from "../lib/api.js";
 import type { Workflow } from "../lib/types.js";
 import Badge from "../components/Badge.js";
+import {
+  PageHeaderWrapper,
+  BlockLayout,
+  Button,
+  Input,
+  Textarea,
+  Checkbox,
+  CheckboxLabel,
+  FormLabel,
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+  TableEmptyState,
+  Skeleton,
+  Typography,
+} from "../components/ui/index.js";
 
 interface Enrollment {
   id: string;
@@ -79,107 +98,115 @@ export default function WorkflowDetail() {
     load();
   }
 
-  if (!workflow) return <p className="muted">Loading…</p>;
+  if (!workflow) return <Skeleton className="h-48" />;
 
   return (
     <div>
-      <div className="page-header">
-        <h2>{workflow.name}</h2>
-        <Badge status={workflow.status} />
-      </div>
+      <PageHeaderWrapper
+        variant="title-with-actions"
+        title={workflow.name}
+        actions={<Badge status={workflow.status} />}
+      />
 
-      <div className="toolbar">
+      <div className="mb-4 flex gap-2">
         {workflow.status !== "active" && (
-          <button onClick={() => setStatus("active")}>Activate</button>
+          <Button onClick={() => setStatus("active")}>Activate</Button>
         )}
         {workflow.status === "active" && (
-          <button className="secondary" onClick={() => setStatus("paused")}>
+          <Button variant="outline" onClick={() => setStatus("paused")}>
             Pause
-          </button>
+          </Button>
         )}
       </div>
 
-      <div className="card">
-        <div>
-          <strong>Trigger:</strong> {workflow.trigger_type}
+      <BlockLayout className="mb-4">
+        <div className="space-y-4">
+          <div>
+            <strong>Trigger:</strong> {workflow.trigger_type}
+          </div>
+          <div className="space-y-2">
+            <FormLabel>Trigger config (JSON)</FormLabel>
+            <Textarea
+              rows={4}
+              value={triggerConfigText}
+              onChange={(e) => setTriggerConfigText(e.target.value)}
+              className="font-mono"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <Checkbox
+              checked={reentry}
+              onCheckedChange={(v) => setReentry(v === true)}
+              id="reentry"
+            />
+            <CheckboxLabel htmlFor="reentry">
+              Allow contacts to re-enter after completing
+            </CheckboxLabel>
+          </div>
         </div>
-        <label>Trigger config (JSON)</label>
-        <textarea
-          rows={4}
-          value={triggerConfigText}
-          onChange={(e) => setTriggerConfigText(e.target.value)}
-        />
-        <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}>
-          <input
-            type="checkbox"
-            style={{ width: "auto" }}
-            checked={reentry}
-            onChange={(e) => setReentry(e.target.checked)}
+      </BlockLayout>
+
+      <BlockLayout className="mb-4">
+        <div className="space-y-4">
+          <Typography variant="h3">Steps</Typography>
+          <p className="text-muted-foreground text-xs whitespace-pre-wrap">{STEP_HELP}</p>
+          <Textarea
+            rows={14}
+            value={stepsText}
+            onChange={(e) => setStepsText(e.target.value)}
+            className="font-mono"
           />
-          Allow contacts to re-enter after completing
-        </label>
-      </div>
-
-      <div className="card">
-        <h3 style={{ marginTop: 0 }}>Steps</h3>
-        <p className="muted" style={{ whiteSpace: "pre-wrap", fontSize: 12 }}>
-          {STEP_HELP}
-        </p>
-        <textarea rows={14} value={stepsText} onChange={(e) => setStepsText(e.target.value)} />
-        {error && <p className="error-text">{error}</p>}
-        {saved && <p style={{ color: "var(--success)", fontSize: 13 }}>Saved.</p>}
-        <div style={{ marginTop: 12 }}>
-          <button onClick={save}>Save</button>
+          {error && <p className="text-destructive text-sm">{error}</p>}
+          {saved && <p className="text-success text-sm">Saved.</p>}
+          <Button onClick={save}>Save</Button>
         </div>
-      </div>
+      </BlockLayout>
 
-      <div className="card">
-        <h3 style={{ marginTop: 0 }}>Manual enrollment</h3>
-        <div className="toolbar">
-          <input
-            placeholder="Subscriber ID"
-            value={subscriberId}
-            onChange={(e) => setSubscriberId(e.target.value)}
-            style={{ maxWidth: 160 }}
-          />
-          <button onClick={enroll}>Enroll</button>
+      <BlockLayout className="mb-4">
+        <div className="space-y-4">
+          <Typography variant="h3">Manual enrollment</Typography>
+          <div className="flex gap-2">
+            <Input
+              placeholder="Subscriber ID"
+              value={subscriberId}
+              onChange={(e) => setSubscriberId(e.target.value)}
+              className="max-w-[160px]"
+            />
+            <Button onClick={enroll}>Enroll</Button>
+          </div>
         </div>
-      </div>
+      </BlockLayout>
 
-      <div className="card">
-        <h3 style={{ marginTop: 0 }}>Enrollments</h3>
-        <table>
-          <thead>
-            <tr>
-              <th>Subscriber</th>
-              <th>Status</th>
-              <th>Step</th>
-              <th>Next run</th>
-            </tr>
-          </thead>
-          <tbody>
+      <BlockLayout padding="sm">
+        <Typography variant="h3" className="mb-4">
+          Enrollments
+        </Typography>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Subscriber</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Step</TableHead>
+              <TableHead>Next run</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {enrollments.map((e) => (
-              <tr key={e.id}>
-                <td>{e.email}</td>
-                <td>
+              <TableRow key={e.id}>
+                <TableCell>{e.email}</TableCell>
+                <TableCell>
                   <Badge status={e.status} />
-                </td>
-                <td>{e.current_step}</td>
-                <td className="muted">
+                </TableCell>
+                <TableCell>{e.current_step}</TableCell>
+                <TableCell className="text-muted-foreground">
                   {e.next_run_at ? new Date(e.next_run_at).toLocaleString() : "—"}
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ))}
-            {enrollments.length === 0 && (
-              <tr>
-                <td colSpan={4} className="muted">
-                  No enrollments yet.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+          </TableBody>
+        </Table>
+        {enrollments.length === 0 && <TableEmptyState title="No enrollments yet" />}
+      </BlockLayout>
     </div>
   );
 }

@@ -3,6 +3,31 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api.js";
 import { parseCSV } from "../lib/csv.js";
 import type { List } from "../lib/types.js";
+import {
+  PageHeaderWrapper,
+  BlockLayout,
+  Button,
+  Input,
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+  RadioGroup,
+  RadioGroupItem,
+  RadioGroupLabel,
+  Switch,
+  FormLabel,
+  FormRow,
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+  Alert,
+  Typography,
+} from "../components/ui/index.js";
 
 type ColumnRole = "ignore" | "email" | "name" | "attribs_json" | "attribute";
 
@@ -31,10 +56,6 @@ function guessRole(header: string): ColumnRole {
   return "attribute";
 }
 
-/** Only one column may claim each of these roles -- if the header-name
- * guessing produces two "email" (or name/attribs_json) columns, keep the
- * first and fall back the rest to "attribute" rather than silently
- * dropping their data. */
 function dedupeSingletonRoles(cols: ColumnMapping[]): ColumnMapping[] {
   const seen = new Set<ColumnRole>();
   return cols.map((c) => {
@@ -219,234 +240,221 @@ export default function SubscriberImport() {
 
   return (
     <div>
-      <div className="page-header">
-        <h2>Import subscribers</h2>
-        <button className="secondary" onClick={() => navigate("/subscribers")}>
-          Back
-        </button>
-      </div>
+      <PageHeaderWrapper
+        variant="title-with-actions"
+        title="Import subscribers"
+        actions={
+          <Button variant="outline" onClick={() => navigate("/subscribers")}>
+            Back
+          </Button>
+        }
+      />
 
-      <div className="card">
-        <div className="form-row">
-          <div>
-            <label>Mode</label>
-            <div style={{ display: "flex", gap: 16, marginTop: 4 }}>
-              <label
-                style={{ display: "flex", alignItems: "center", gap: 6, width: "auto", margin: 0 }}
+      <BlockLayout className="mb-4">
+        <div className="space-y-4">
+          <FormRow>
+            <div className="space-y-2">
+              <FormLabel>Mode</FormLabel>
+              <RadioGroup
+                value={mode}
+                onValueChange={(v) => setMode(v as "subscribe" | "blocklist")}
+                className="flex gap-4"
               >
-                <input
-                  type="radio"
-                  style={{ width: "auto" }}
-                  checked={mode === "subscribe"}
-                  onChange={() => setMode("subscribe")}
-                />
-                Subscribe
-              </label>
-              <label
-                style={{ display: "flex", alignItems: "center", gap: 6, width: "auto", margin: 0 }}
-              >
-                <input
-                  type="radio"
-                  style={{ width: "auto" }}
-                  checked={mode === "blocklist"}
-                  onChange={() => setMode("blocklist")}
-                />
-                Blocklist
-              </label>
+                <div className="flex items-center gap-2">
+                  <RadioGroupItem value="subscribe" id="mode-subscribe" />
+                  <RadioGroupLabel htmlFor="mode-subscribe">Subscribe</RadioGroupLabel>
+                </div>
+                <div className="flex items-center gap-2">
+                  <RadioGroupItem value="blocklist" id="mode-blocklist" />
+                  <RadioGroupLabel htmlFor="mode-blocklist">Blocklist</RadioGroupLabel>
+                </div>
+              </RadioGroup>
             </div>
-          </div>
-          <div>
-            <label>Status</label>
-            <div style={{ display: "flex", gap: 16, marginTop: 4 }}>
-              <label
-                style={{ display: "flex", alignItems: "center", gap: 6, width: "auto", margin: 0 }}
+            <div className="space-y-2">
+              <FormLabel>Status</FormLabel>
+              <RadioGroup
+                value={status}
+                onValueChange={(v) => setStatus(v as "unconfirmed" | "confirmed")}
+                className="flex gap-4"
               >
-                <input
-                  type="radio"
-                  style={{ width: "auto" }}
-                  disabled={mode === "blocklist"}
-                  checked={status === "unconfirmed"}
-                  onChange={() => setStatus("unconfirmed")}
-                />
-                Unconfirmed
-              </label>
-              <label
-                style={{ display: "flex", alignItems: "center", gap: 6, width: "auto", margin: 0 }}
-              >
-                <input
-                  type="radio"
-                  style={{ width: "auto" }}
-                  disabled={mode === "blocklist"}
-                  checked={status === "confirmed"}
-                  onChange={() => setStatus("confirmed")}
-                />
-                Confirmed
-              </label>
+                <div className="flex items-center gap-2">
+                  <RadioGroupItem
+                    value="unconfirmed"
+                    id="status-unconfirmed"
+                    disabled={mode === "blocklist"}
+                  />
+                  <RadioGroupLabel htmlFor="status-unconfirmed">Unconfirmed</RadioGroupLabel>
+                </div>
+                <div className="flex items-center gap-2">
+                  <RadioGroupItem
+                    value="confirmed"
+                    id="status-confirmed"
+                    disabled={mode === "blocklist"}
+                  />
+                  <RadioGroupLabel htmlFor="status-confirmed">Confirmed</RadioGroupLabel>
+                </div>
+              </RadioGroup>
             </div>
-          </div>
-          <div>
-            <label>CSV delimiter</label>
-            <input
+          </FormRow>
+
+          <div className="space-y-2">
+            <FormLabel>CSV delimiter</FormLabel>
+            <Input
               value={delimiter}
               onChange={(e) => setDelimiter(e.target.value.slice(0, 1) || ",")}
               maxLength={1}
-              style={{ maxWidth: 60 }}
+              className="max-w-[60px]"
             />
-            <p className="muted" style={{ fontSize: 12 }}>
-              Default delimiter is comma.
-            </p>
+            <p className="text-muted-foreground text-xs">Default delimiter is comma.</p>
           </div>
-        </div>
 
-        <div className="form-row">
-          <label style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span className="switch">
-              <input
-                type="checkbox"
-                checked={overwriteUserInfo}
-                onChange={(e) => setOverwriteUserInfo(e.target.checked)}
-              />
-              <span className="slider" />
-            </span>
-            Overwrite user info
-          </label>
-          <label style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span className="switch">
-              <input
-                type="checkbox"
+          <FormRow>
+            <div className="flex items-center gap-3">
+              <Switch checked={overwriteUserInfo} onCheckedChange={setOverwriteUserInfo} />
+              <span className="text-sm">Overwrite user info</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <Switch
                 checked={overwriteSubscriptionStatus}
-                onChange={(e) => setOverwriteSubscriptionStatus(e.target.checked)}
+                onCheckedChange={setOverwriteSubscriptionStatus}
                 disabled={mode === "blocklist"}
               />
-              <span className="slider" />
-            </span>
-            Overwrite subscription status
-          </label>
-        </div>
-        <p className="muted" style={{ fontSize: 12, marginTop: 4 }}>
-          Overwrite name and attributes of existing subscribers / overwrite the status of existing
-          list subscriptions. Off by default -- existing data is left alone.
-        </p>
-
-        {mode === "subscribe" && (
-          <>
-            <label>Lists</label>
-            <select
-              multiple
-              value={listIds.map(String)}
-              onChange={(e) =>
-                setListIds(Array.from(e.target.selectedOptions, (o) => Number(o.value)))
-              }
-              size={Math.min(Math.max(lists.length, 3), 8)}
-            >
-              {lists.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.name} ({l.optin})
-                </option>
-              ))}
-            </select>
-            {lists.length === 0 && <p className="muted">No lists yet.</p>}
-          </>
-        )}
-
-        <label>CSV file</label>
-        <div
-          onClick={() => fileInputRef.current?.click()}
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={onDrop}
-          style={{
-            border: "1px dashed var(--border)",
-            borderRadius: 8,
-            padding: 32,
-            textAlign: "center",
-            cursor: "pointer",
-          }}
-        >
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".csv,text/csv"
-            style={{ display: "none" }}
-            onChange={onFileInputChange}
-          />
-          {fileName ? (
-            <span>{fileName} -- click or drop to replace</span>
-          ) : (
-            <span className="muted">Click or drag a CSV file here</span>
-          )}
-        </div>
-      </div>
-
-      {parsed && parsed.headers.length > 0 && (
-        <div className="card">
-          <h3 style={{ marginTop: 0 }}>Map columns</h3>
-          <p className="muted" style={{ fontSize: 13 }}>
-            {parsed.dataRows.length} row{parsed.dataRows.length === 1 ? "" : "s"} detected. Choose
-            what each CSV column means -- exactly one column must map to Email.
+              <span className="text-sm">Overwrite subscription status</span>
+            </div>
+          </FormRow>
+          <p className="text-muted-foreground text-xs">
+            Overwrite name and attributes of existing subscribers / overwrite the status of existing
+            list subscriptions. Off by default — existing data is left alone.
           </p>
-          <table>
-            <thead>
-              <tr>
-                <th>CSV column</th>
-                <th>Sample value</th>
-                <th>Maps to</th>
-                <th>Attribute key</th>
-              </tr>
-            </thead>
-            <tbody>
-              {mapping.map((c) => (
-                <tr key={c.index}>
-                  <td>{c.header || <span className="muted">(column {c.index + 1})</span>}</td>
-                  <td className="muted">{parsed.dataRows[0]?.[c.index] ?? ""}</td>
-                  <td>
-                    <select
-                      value={c.role}
-                      onChange={(e) => setRole(c.index, e.target.value as ColumnRole)}
-                    >
-                      <option value="ignore">Ignore</option>
-                      <option value="email">Email</option>
-                      <option value="name">Name</option>
-                      <option value="attribs_json">Attributes (JSON)</option>
-                      <option value="attribute">Attribute</option>
-                    </select>
-                  </td>
-                  <td>
-                    {c.role === "attribute" ? (
-                      <input
-                        value={c.attributeKey}
-                        onChange={(e) => setAttributeKey(c.index, e.target.value)}
-                      />
-                    ) : (
-                      <span className="muted">—</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
 
-          {error && <p className="error-text">{error}</p>}
-          {progress && (
-            <p className="muted">
-              Importing… {progress.done}/{progress.total}
-            </p>
-          )}
-          {result && (
-            <p style={{ color: "var(--success)" }}>
-              Imported {result.imported} subscriber{result.imported === 1 ? "" : "s"}
-              {result.skipped > 0
-                ? `, skipped ${result.skipped} row${result.skipped === 1 ? "" : "s"} without a valid email`
-                : ""}
-              .
-            </p>
+          {mode === "subscribe" && (
+            <div className="space-y-2">
+              <FormLabel>Lists</FormLabel>
+              <select
+                multiple
+                value={listIds.map(String)}
+                onChange={(e) =>
+                  setListIds(Array.from(e.target.selectedOptions, (o) => Number(o.value)))
+                }
+                size={Math.min(Math.max(lists.length, 3), 8)}
+                className="border-input w-full rounded-md border bg-transparent px-3 py-2 text-sm"
+              >
+                {lists.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name} ({l.optin})
+                  </option>
+                ))}
+              </select>
+              {lists.length === 0 && <p className="text-muted-foreground text-sm">No lists yet.</p>}
+            </div>
           )}
 
-          <div style={{ marginTop: 16 }}>
-            <button onClick={runImport} disabled={importing || !emailColumn}>
-              {importing ? "Importing…" : "Import"}
-            </button>
+          <div className="space-y-2">
+            <FormLabel>CSV file</FormLabel>
+            <div
+              onClick={() => fileInputRef.current?.click()}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={onDrop}
+              className="border-input hover:bg-accent/50 cursor-pointer rounded-lg border border-dashed p-8 text-center"
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv,text/csv"
+                className="hidden"
+                onChange={onFileInputChange}
+              />
+              {fileName ? (
+                <span className="text-sm">{fileName} — click or drop to replace</span>
+              ) : (
+                <span className="text-muted-foreground text-sm">Click or drag a CSV file here</span>
+              )}
+            </div>
           </div>
         </div>
+      </BlockLayout>
+
+      {parsed && parsed.headers.length > 0 && (
+        <BlockLayout className="mb-4">
+          <div className="space-y-4">
+            <Typography variant="h3">Map columns</Typography>
+            <p className="text-muted-foreground text-sm">
+              {parsed.dataRows.length} row{parsed.dataRows.length === 1 ? "" : "s"} detected. Choose
+              what each CSV column means — exactly one column must map to Email.
+            </p>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>CSV column</TableHead>
+                  <TableHead>Sample value</TableHead>
+                  <TableHead>Maps to</TableHead>
+                  <TableHead>Attribute key</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {mapping.map((c) => (
+                  <TableRow key={c.index}>
+                    <TableCell>
+                      {c.header || (
+                        <span className="text-muted-foreground">(column {c.index + 1})</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {parsed.dataRows[0]?.[c.index] ?? ""}
+                    </TableCell>
+                    <TableCell>
+                      <Select
+                        value={c.role}
+                        onValueChange={(v) => setRole(c.index, v as ColumnRole)}
+                      >
+                        <SelectTrigger className="w-40">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="ignore">Ignore</SelectItem>
+                          <SelectItem value="email">Email</SelectItem>
+                          <SelectItem value="name">Name</SelectItem>
+                          <SelectItem value="attribs_json">Attributes (JSON)</SelectItem>
+                          <SelectItem value="attribute">Attribute</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
+                    <TableCell>
+                      {c.role === "attribute" ? (
+                        <Input
+                          value={c.attributeKey}
+                          onChange={(e) => setAttributeKey(c.index, e.target.value)}
+                        />
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+
+            {error && <Alert variant="destructive">{error}</Alert>}
+            {progress && (
+              <p className="text-muted-foreground text-sm">
+                Importing… {progress.done}/{progress.total}
+              </p>
+            )}
+            {result && (
+              <p className="text-success text-sm">
+                Imported {result.imported} subscriber{result.imported === 1 ? "" : "s"}
+                {result.skipped > 0
+                  ? `, skipped ${result.skipped} row${result.skipped === 1 ? "" : "s"} without a valid email`
+                  : ""}
+                .
+              </p>
+            )}
+
+            <Button onClick={runImport} disabled={importing || !emailColumn}>
+              {importing ? "Importing…" : "Import"}
+            </Button>
+          </div>
+        </BlockLayout>
       )}
     </div>
   );

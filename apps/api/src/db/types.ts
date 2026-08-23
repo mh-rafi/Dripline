@@ -28,6 +28,12 @@ export interface SubscriberListsTable {
   subscriber_id: number;
   list_id: number;
   status: Generated<"unconfirmed" | "confirmed" | "unsubscribed">;
+  // Set by blocklistSubscriber() to remember this membership's status right
+  // before it force-unsubscribed it, so unblocklistSubscriber() can restore
+  // exactly that -- null means either never blocklisted, or already
+  // unsubscribed by the subscriber's own action before blocklisting (in
+  // which case there's nothing to restore).
+  pre_blocklist_status: "unconfirmed" | "confirmed" | "unsubscribed" | null;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
 }

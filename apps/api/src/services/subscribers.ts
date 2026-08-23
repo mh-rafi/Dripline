@@ -35,7 +35,12 @@ export async function addToList(
     .insertInto("subscriber_lists")
     .values({ subscriber_id: subscriberId, list_id: listId, status: resolvedStatus })
     .onConflict((oc) =>
-      oc.columns(["subscriber_id", "list_id"]).doUpdateSet({ status: resolvedStatus }),
+      // Clearing pre_blocklist_status here too: an explicit status change
+      // supersedes whatever blocklisting had stashed, so a later unblock
+      // doesn't clobber it back.
+      oc
+        .columns(["subscriber_id", "list_id"])
+        .doUpdateSet({ status: resolvedStatus, pre_blocklist_status: null }),
     )
     .execute();
 
@@ -61,7 +66,11 @@ export async function addToListForImport(
     .values({ subscriber_id: subscriberId, list_id: listId, status });
   await (
     overwriteStatus
-      ? query.onConflict((oc) => oc.columns(["subscriber_id", "list_id"]).doUpdateSet({ status }))
+      ? query.onConflict((oc) =>
+          oc
+            .columns(["subscriber_id", "list_id"])
+            .doUpdateSet({ status, pre_blocklist_status: null }),
+        )
       : query.onConflict((oc) => oc.columns(["subscriber_id", "list_id"]).doNothing())
   ).execute();
   await triggerListJoined(db, subscriberId, listId);
@@ -79,7 +88,10 @@ async function defaultStatusForList(db: DB, listId: number): Promise<"unconfirme
 export async function removeFromList(db: DB, subscriberId: number, listId: number) {
   await db
     .updateTable("subscriber_lists")
-    .set({ status: "unsubscribed" })
+    // An explicit removal wins over whatever blocklisting had stashed --
+    // don't let a later unblock resurrect a membership someone deliberately
+    // removed in the meantime.
+    .set({ status: "unsubscribed", pre_blocklist_status: null })
     .where("subscriber_id", "=", subscriberId)
     .where("list_id", "=", listId)
     .execute();
@@ -107,26 +119,34 @@ export async function removeTag(db: DB, subscriberId: number, tag: string) {
   await db.updateTable("subscribers").set({ attribs }).where("id", "=", subscriberId).execute();
 }
 
+/**
+ * Blocklists a subscriber and force-unsubscribes them from every list.
+ * Before overwriting each membership's status, stashes it in
+ * `pre_blocklist_status` (skipping memberships already unsubscribed -- those
+ * weren't unsubscribed *by* this blocklisting, so there's nothing of theirs
+ * to remember) so unblocklistSubscriber() can undo exactly this side effect
+ * later, without resurrecting a genuine prior opt-out.
+ */
 export async function blocklistSubscriber(db: DB, subscriberId: number) {
   await db
     .updateTable("subscribers")
     .set({ status: "blocklisted" })
     .where("id", "=", subscriberId)
     .execute();
-  await db
-    .updateTable("subscriber_lists")
-    .set({ status: "unsubscribed" })
-    .where("subscriber_id", "=", subscriberId)
-    .execute();
+  await sql`
+    UPDATE subscriber_lists
+    SET pre_blocklist_status = status, status = 'unsubscribed'
+    WHERE subscriber_id = ${subscriberId} AND status != 'unsubscribed'
+  `.execute(db);
 }
 
 /**
- * Reverses a blocklist -- makes the subscriber eligible for sends again.
- * Deliberately does *not* restore their list memberships to unsubscribed's
- * prior status: blocklisting unsubscribed them from everything, and silently
- * re-subscribing on un-blocklist would resurrect consent that was
- * intentionally withdrawn (or lost to a hard bounce) without them asking for
- * it. An admin can re-add them to specific lists explicitly if appropriate.
+ * Reverses a blocklist -- makes the subscriber eligible for sends again, and
+ * restores exactly the list memberships blocklistSubscriber() force-
+ * unsubscribed (via `pre_blocklist_status`, cleared once restored). A
+ * membership the subscriber had already unsubscribed from themselves before
+ * ever being blocklisted is left alone, since it was never touched by
+ * blocklisting in the first place.
  */
 export async function unblocklistSubscriber(db: DB, subscriberId: number) {
   await db
@@ -134,6 +154,11 @@ export async function unblocklistSubscriber(db: DB, subscriberId: number) {
     .set({ status: "enabled" })
     .where("id", "=", subscriberId)
     .execute();
+  await sql`
+    UPDATE subscriber_lists
+    SET status = pre_blocklist_status, pre_blocklist_status = NULL
+    WHERE subscriber_id = ${subscriberId} AND pre_blocklist_status IS NOT NULL
+  `.execute(db);
 }
 
 export async function unsubscribeFromCampaignLists(

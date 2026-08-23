@@ -3,15 +3,33 @@ import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../lib/api.js";
 import type { List, Subscriber } from "../lib/types.js";
 import Badge from "../components/Badge.js";
+import {
+  PageHeaderWrapper,
+  BlockLayout,
+  Button,
+  Input,
+  Textarea,
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+  FormLabel,
+  Table,
+  TableBody,
+  TableRow,
+  TableCell,
+  Tag,
+  Popconfirm,
+  Alert,
+  Skeleton,
+  Typography,
+} from "../components/ui/index.js";
 
 interface SubscriberWithLists extends Subscriber {
   lists: { id: number; name: string; optin: "single" | "double"; status: string }[];
 }
 
-/** Single opt-in lists don't gate sending on unconfirmed/confirmed at all --
- * showing that distinction there just reads as "needs action" when it
- * doesn't. Only double opt-in lists actually require confirmation before a
- * subscriber receives campaigns (see queries/campaigns.ts eligibility). */
 function listMembershipBadge(l: { optin: "single" | "double"; status: string }) {
   if (l.status === "unsubscribed") {
     return {
@@ -63,7 +81,7 @@ export default function SubscriberDetail() {
     api.get<List[]>("/lists").then(setLists);
   }, [id]);
 
-  if (!subscriber) return <p className="muted">Loading…</p>;
+  if (!subscriber) return <Skeleton className="h-48" />;
 
   const tags = Array.isArray(subscriber.attribs.tags) ? (subscriber.attribs.tags as string[]) : [];
   const availableLists = lists.filter((l) => !subscriber.lists.some((sl) => sl.id === l.id));
@@ -77,6 +95,11 @@ export default function SubscriberDetail() {
 
   async function removeFromList(listId: number) {
     await api.delete(`/subscribers/${id}/lists/${listId}`);
+    load();
+  }
+
+  async function resubscribeToList(listId: number) {
+    await api.put(`/subscribers/${id}/lists/${listId}`, {});
     load();
   }
 
@@ -94,29 +117,16 @@ export default function SubscriberDetail() {
   }
 
   async function blocklist() {
-    if (
-      !confirm(
-        "Blocklist this subscriber? They'll be unsubscribed from every list and excluded from all future campaigns.",
-      )
-    )
-      return;
     await api.post(`/subscribers/${id}/blocklist`);
     load();
   }
 
   async function unblocklist() {
-    if (
-      !confirm(
-        "Remove this subscriber from the blocklist? They will not be automatically re-added to any lists -- do that separately if appropriate.",
-      )
-    )
-      return;
     await api.post(`/subscribers/${id}/unblocklist`);
     load();
   }
 
   async function remove() {
-    if (!confirm("Delete this subscriber permanently?")) return;
     await api.delete(`/subscribers/${id}`);
     navigate("/subscribers");
   }
@@ -152,31 +162,35 @@ export default function SubscriberDetail() {
 
   return (
     <div>
-      <div className="page-header">
-        <h2>{subscriber.email}</h2>
-        <Badge status={subscriber.status} />
-      </div>
+      <PageHeaderWrapper
+        variant="title-with-actions"
+        title={subscriber.email}
+        actions={<Badge status={subscriber.status} />}
+      />
 
-      <div className="card">
+      <BlockLayout className="mb-4">
         {editingProfile ? (
-          <>
-            <label>Name</label>
-            <input value={name} onChange={(e) => setName(e.target.value)} />
-            <label>Attributes (JSON)</label>
-            <textarea
-              rows={8}
-              value={attribsText}
-              onChange={(e) => setAttribsText(e.target.value)}
-              style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
-            />
-            {profileError && <p className="error-text">{profileError}</p>}
-            <div className="toolbar" style={{ marginTop: 12 }}>
-              <button onClick={saveProfile} disabled={savingProfile}>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <FormLabel>Name</FormLabel>
+              <Input value={name} onChange={(e) => setName(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <FormLabel>Attributes (JSON)</FormLabel>
+              <Textarea
+                rows={8}
+                value={attribsText}
+                onChange={(e) => setAttribsText(e.target.value)}
+                className="font-mono"
+              />
+            </div>
+            {profileError && <Alert variant="destructive">{profileError}</Alert>}
+            <div className="flex gap-2">
+              <Button onClick={saveProfile} disabled={savingProfile}>
                 {savingProfile ? "Saving…" : "Save"}
-              </button>
-              <button
-                type="button"
-                className="secondary"
+              </Button>
+              <Button
+                variant="outline"
                 disabled={savingProfile}
                 onClick={() => {
                   setEditingProfile(false);
@@ -184,111 +198,129 @@ export default function SubscriberDetail() {
                 }}
               >
                 Cancel
-              </button>
+              </Button>
             </div>
-          </>
+          </div>
         ) : (
-          <>
+          <div className="space-y-2">
             <div>
-              <strong>Name:</strong> {subscriber.name || <span className="muted">—</span>}
+              <strong>Name:</strong>{" "}
+              {subscriber.name || <span className="text-muted-foreground">—</span>}
             </div>
-            <div style={{ marginTop: 8 }}>
+            <div>
               <strong>Attributes:</strong>
-              <pre>{JSON.stringify(subscriber.attribs, null, 2)}</pre>
+              <pre className="bg-muted mt-2 overflow-auto rounded-md p-2 font-mono text-sm">
+                {JSON.stringify(subscriber.attribs, null, 2)}
+              </pre>
             </div>
-            <div className="toolbar" style={{ marginTop: 12 }}>
-              <button className="secondary" onClick={beginEditProfile}>
+            <div>
+              <Button variant="outline" size="sm" onClick={beginEditProfile}>
                 Edit
-              </button>
+              </Button>
             </div>
-          </>
+          </div>
         )}
-      </div>
+      </BlockLayout>
 
-      <div className="card">
-        <h3 style={{ marginTop: 0 }}>Lists</h3>
-        <table>
-          <tbody>
+      <BlockLayout className="mb-4">
+        <Typography variant="h3" className="mb-4">
+          Lists
+        </Typography>
+        <Table>
+          <TableBody>
             {subscriber.lists.map((l) => {
               const badge = listMembershipBadge(l);
               return (
-                <tr key={l.id}>
-                  <td>
-                    {l.name} <span className="muted">({l.optin} opt-in)</span>
-                  </td>
-                  <td>
+                <TableRow key={l.id}>
+                  <TableCell>
+                    {l.name} <span className="text-muted-foreground">({l.optin} opt-in)</span>
+                  </TableCell>
+                  <TableCell>
                     <Badge status={badge.status} label={badge.label} title={badge.title} />
-                  </td>
-                  <td>
-                    <button className="secondary" onClick={() => removeFromList(l.id)}>
-                      Remove
-                    </button>
-                  </td>
-                </tr>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {l.status === "unsubscribed" ? (
+                      <Button variant="outline" size="sm" onClick={() => resubscribeToList(l.id)}>
+                        Resubscribe
+                      </Button>
+                    ) : (
+                      <Button variant="outline" size="sm" onClick={() => removeFromList(l.id)}>
+                        Remove
+                      </Button>
+                    )}
+                  </TableCell>
+                </TableRow>
               );
             })}
-          </tbody>
-        </table>
-        <div className="toolbar" style={{ marginTop: 12 }}>
-          <select
-            value={addListId}
-            onChange={(e) => setAddListId(e.target.value)}
-            style={{ maxWidth: 240 }}
-          >
-            <option value="">Add to list…</option>
-            {availableLists.map((l) => (
-              <option key={l.id} value={l.id}>
-                {l.name}
-              </option>
-            ))}
-          </select>
-          <button onClick={addToList} disabled={!addListId}>
+          </TableBody>
+        </Table>
+        <div className="mt-4 flex gap-2">
+          <Select value={addListId} onValueChange={setAddListId}>
+            <SelectTrigger className="max-w-xs">
+              <SelectValue placeholder="Add to list…" />
+            </SelectTrigger>
+            <SelectContent>
+              {availableLists.map((l) => (
+                <SelectItem key={l.id} value={String(l.id)}>
+                  {l.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button onClick={addToList} disabled={!addListId}>
             Add
-          </button>
+          </Button>
         </div>
-      </div>
+      </BlockLayout>
 
-      <div className="card">
-        <h3 style={{ marginTop: 0 }}>Tags</h3>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+      <BlockLayout className="mb-4">
+        <Typography variant="h3" className="mb-4">
+          Tags
+        </Typography>
+        <div className="mb-4 flex flex-wrap gap-2">
           {tags.map((t) => (
-            <span key={t} className="badge draft">
-              {t}{" "}
-              <button
-                className="secondary"
-                style={{ padding: "0 4px", marginLeft: 4, fontSize: 11 }}
-                onClick={() => removeTag(t)}
-              >
-                ×
-              </button>
-            </span>
+            <Tag key={t} variant="default" onRemove={() => removeTag(t)}>
+              {t}
+            </Tag>
           ))}
-          {tags.length === 0 && <span className="muted">No tags.</span>}
+          {tags.length === 0 && <span className="text-muted-foreground text-sm">No tags.</span>}
         </div>
-        <form className="toolbar" onSubmit={addTag}>
-          <input
+        <form className="flex gap-2" onSubmit={addTag}>
+          <Input
             placeholder="new tag"
             value={newTag}
             onChange={(e) => setNewTag(e.target.value)}
-            style={{ maxWidth: 200 }}
+            className="max-w-xs"
           />
-          <button type="submit">Add tag</button>
+          <Button type="submit">Add tag</Button>
         </form>
-      </div>
+      </BlockLayout>
 
-      <div className="toolbar">
+      <div className="flex gap-2">
         {subscriber.status === "blocklisted" ? (
-          <button className="secondary" onClick={unblocklist}>
-            Remove from blocklist
-          </button>
+          <Popconfirm
+            description="Remove this subscriber from the blocklist? Lists they were unsubscribed from by blocklisting will be restored; any they'd already unsubscribed from before that stay unsubscribed."
+            onConfirm={unblocklist}
+            confirmText="Unblocklist"
+          >
+            <Button variant="outline">Remove from blocklist</Button>
+          </Popconfirm>
         ) : (
-          <button className="danger" onClick={blocklist}>
-            Blocklist
-          </button>
+          <Popconfirm
+            description="Blocklist this subscriber? They'll be unsubscribed from every list and excluded from all future campaigns."
+            onConfirm={blocklist}
+            confirmText="Blocklist"
+          >
+            <Button variant="destructive">Blocklist</Button>
+          </Popconfirm>
         )}
-        <button className="danger" onClick={remove}>
-          Delete
-        </button>
+        <Popconfirm
+          description="Delete this subscriber permanently?"
+          onConfirm={remove}
+          confirmText="Delete"
+        >
+          <Button variant="destructive">Delete</Button>
+        </Popconfirm>
       </div>
     </div>
   );
