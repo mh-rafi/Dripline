@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "./lib/auth.js";
 import Layout from "./components/Layout.js";
 import Login from "./pages/Login.js";
+import Unsubscribe from "./pages/Unsubscribe.js";
 import Dashboard from "./pages/Dashboard.js";
 import Subscribers from "./pages/Subscribers.js";
 import SubscriberImport from "./pages/SubscriberImport.js";
@@ -32,6 +33,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/unsubscribe/:campaignUuid/:subscriberUuid" element={<Unsubscribe />} />
       <Route
         element={
           <RequireAuth>

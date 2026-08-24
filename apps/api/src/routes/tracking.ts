@@ -5,7 +5,11 @@ import type { Config } from "../config.js";
 import { verify } from "../lib/signing.js";
 import { TRANSPARENT_GIF } from "../lib/pixel.js";
 import { recordEvent } from "../services/workflows.js";
-import { unsubscribeFromCampaignLists } from "../services/subscribers.js";
+import {
+  unsubscribeFromAllLists,
+  unsubscribeFromCampaignLists,
+  unsubscribeFromLists,
+} from "../services/subscribers.js";
 
 const Params = z.object({ campaignUuid: z.string().uuid(), subscriberUuid: z.string().uuid() });
 
@@ -96,6 +100,70 @@ export default async function trackingRoutes(
     if (campaignId && subscriberId) {
       await unsubscribeFromCampaignLists(db, subscriberId, campaignId);
     }
+    return { ok: true };
+  });
+
+  // Backs the visible unsubscribe *page* (as opposed to the one-click
+  // List-Unsubscribe header above): lets a subscriber see and choose which
+  // of their public lists to leave, rather than blindly unsubscribing from
+  // whatever the campaign happened to be sent through.
+  app.get("/api/v1/unsubscribe/:campaignUuid/:subscriberUuid/lists", async (req, reply) => {
+    const { campaignUuid, subscriberUuid } = Params.parse(req.params);
+    const { sig } = z.object({ sig: z.string() }).parse(req.query);
+    if (!verify(config.trackingSecret, [subscriberUuid, campaignUuid], sig)) {
+      return reply.code(403).send({ error: "invalid unsubscribe link" });
+    }
+
+    const subscriber = await db
+      .selectFrom("subscribers")
+      .select(["id", "email"])
+      .where("uuid", "=", subscriberUuid)
+      .executeTakeFirst();
+    if (!subscriber) return reply.code(404).send({ error: "not found" });
+
+    const lists = await db
+      .selectFrom("subscriber_lists")
+      .innerJoin("lists", "lists.id", "subscriber_lists.list_id")
+      .select(["lists.id", "lists.name"])
+      .where("subscriber_lists.subscriber_id", "=", subscriber.id)
+      .where("lists.type", "=", "public")
+      .where("subscriber_lists.status", "!=", "unsubscribed")
+      .execute();
+
+    return { email: subscriber.email, lists };
+  });
+
+  app.post("/api/v1/unsubscribe/:campaignUuid/:subscriberUuid/lists", async (req, reply) => {
+    const { campaignUuid, subscriberUuid } = Params.parse(req.params);
+    const { sig, list_ids } = z
+      .object({ sig: z.string(), list_ids: z.array(z.number().int()) })
+      .parse(req.body);
+    if (!verify(config.trackingSecret, [subscriberUuid, campaignUuid], sig)) {
+      return reply.code(403).send({ error: "invalid unsubscribe link" });
+    }
+
+    const subscriber = await db
+      .selectFrom("subscribers")
+      .select("id")
+      .where("uuid", "=", subscriberUuid)
+      .executeTakeFirst();
+    if (subscriber) await unsubscribeFromLists(db, subscriber.id, list_ids);
+    return { ok: true };
+  });
+
+  app.post("/api/v1/unsubscribe/:campaignUuid/:subscriberUuid/all", async (req, reply) => {
+    const { campaignUuid, subscriberUuid } = Params.parse(req.params);
+    const { sig } = z.object({ sig: z.string() }).parse(req.body);
+    if (!verify(config.trackingSecret, [subscriberUuid, campaignUuid], sig)) {
+      return reply.code(403).send({ error: "invalid unsubscribe link" });
+    }
+
+    const subscriber = await db
+      .selectFrom("subscribers")
+      .select("id")
+      .where("uuid", "=", subscriberUuid)
+      .executeTakeFirst();
+    if (subscriber) await unsubscribeFromAllLists(db, subscriber.id);
     return { ok: true };
   });
 }

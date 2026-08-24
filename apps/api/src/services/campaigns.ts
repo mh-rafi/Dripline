@@ -290,6 +290,8 @@ export async function previewCampaign(
     subject: input.subject ?? "",
     body,
     content_type,
+    track_opens: true,
+    track_clicks: true,
   } as unknown as Selectable<CampaignsTable>;
 
   const subscriber = syntheticSubscriber("preview@example.com", "Preview Subscriber");

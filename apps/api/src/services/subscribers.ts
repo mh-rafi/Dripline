@@ -97,6 +97,46 @@ export async function removeFromList(db: DB, subscriberId: number, listId: numbe
     .execute();
 }
 
+/**
+ * Self-service unsubscribe from specific lists (the unsubscribe preference
+ * page). Restricted to public lists -- a private list's id should never
+ * reach here since the page never shows one as a checkbox, but the query
+ * still enforces it server-side rather than trusting the submitted ids.
+ */
+export async function unsubscribeFromLists(db: DB, subscriberId: number, listIds: number[]) {
+  if (listIds.length === 0) return;
+  await db
+    .updateTable("subscriber_lists")
+    .set({ status: "unsubscribed", pre_blocklist_status: null })
+    .where("subscriber_id", "=", subscriberId)
+    .where("list_id", "in", listIds)
+    .where((eb) =>
+      eb.exists(
+        eb
+          .selectFrom("lists")
+          .select("id")
+          .whereRef("lists.id", "=", "subscriber_lists.list_id")
+          .where("lists.type", "=", "public"),
+      ),
+    )
+    .execute();
+}
+
+/**
+ * Self-service "unsubscribe from everything" -- unlike unsubscribeFromLists,
+ * this also covers private lists (the only way to leave one, since it's
+ * never shown as an individual choice) but stops short of blocklisting: the
+ * subscriber can still be re-added to a list later, unlike a blocklisted
+ * record.
+ */
+export async function unsubscribeFromAllLists(db: DB, subscriberId: number) {
+  await db
+    .updateTable("subscriber_lists")
+    .set({ status: "unsubscribed", pre_blocklist_status: null })
+    .where("subscriber_id", "=", subscriberId)
+    .execute();
+}
+
 function getTags(attribs: Record<string, unknown>): string[] {
   const tags = attribs.tags;
   return Array.isArray(tags) ? tags.filter((t): t is string => typeof t === "string") : [];

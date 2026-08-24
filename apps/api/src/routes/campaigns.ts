@@ -34,6 +34,8 @@ const CreateCampaignShape = z.object({
   // the rate limiter, which would be a confusing footgun if allowed through.
   rate_limit_count: z.number().int().positive().nullish(),
   rate_limit_duration_seconds: z.number().int().positive().nullish(),
+  track_opens: z.boolean().default(true),
+  track_clicks: z.boolean().default(true),
 });
 function requireRateLimitPair<
   T extends { rate_limit_count?: number | null; rate_limit_duration_seconds?: number | null },
@@ -137,6 +139,8 @@ export default async function campaignRoutes(
         send_at: body.send_at ?? null,
         rate_limit_count: body.rate_limit_count ?? null,
         rate_limit_duration_seconds: body.rate_limit_duration_seconds ?? null,
+        track_opens: body.track_opens,
+        track_clicks: body.track_clicks,
         status: body.send_at ? "scheduled" : "draft",
       })
       .returningAll()

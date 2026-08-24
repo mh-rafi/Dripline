@@ -15,9 +15,18 @@ export interface RenderedEmail {
   unsubscribeUrl: string;
 }
 
+// Same signature backs both URLs -- one endpoint (the RFC 8058 one-click
+// target for mail clients / the List-Unsubscribe header), one page (what a
+// human clicks in the body, offering per-list choice). See
+// docs/plan/DEVELOPMENT_PLAN.md for why these are split.
 function unsubscribeUrl(config: Config, subscriber: Subscriber, campaign: Campaign): string {
   const sig = sign(config.trackingSecret, [subscriber.uuid, campaign.uuid]);
   return `${config.appUrl}/api/v1/unsubscribe/${campaign.uuid}/${subscriber.uuid}?sig=${sig}`;
+}
+
+function unsubscribePageUrl(config: Config, subscriber: Subscriber, campaign: Campaign): string {
+  const sig = sign(config.trackingSecret, [subscriber.uuid, campaign.uuid]);
+  return `${config.appUrl}/unsubscribe/${campaign.uuid}/${subscriber.uuid}?sig=${sig}`;
 }
 
 function openPixelUrl(config: Config, subscriber: Subscriber, campaign: Campaign): string {
@@ -49,6 +58,7 @@ export async function renderCampaignEmail(
   subscriber: Subscriber,
 ): Promise<RenderedEmail> {
   const unsubUrl = unsubscribeUrl(config, subscriber, campaign);
+  const unsubPageUrl = unsubscribePageUrl(config, subscriber, campaign);
   const context = {
     Subscriber: {
       ID: subscriber.id,
@@ -63,7 +73,10 @@ export async function renderCampaignEmail(
       Name: campaign.name,
       Subject: campaign.subject,
     },
-    UnsubscribeURL: unsubUrl,
+    // The visible link a subscriber clicks goes to the preference page, not
+    // straight to the one-click API endpoint used for the List-Unsubscribe
+    // header (`unsubUrl`, returned separately below).
+    UnsubscribeURL: unsubPageUrl,
   };
 
   const body = template ? template.body.replace("{{ Body }}", campaign.body) : campaign.body;
@@ -83,21 +96,25 @@ export async function renderCampaignEmail(
 
   let html = renderTemplate(body, context);
 
-  // unsubUrl must never be wrapped in click-tracking below, or an unsubscribe
-  // click would log a spurious "link click" (and could even fire a
-  // link_clicked workflow trigger) before redirecting.
-  const links = extractLinks(html).filter((url) => url !== unsubUrl);
-  if (links.length > 0) {
-    await db
-      .insertInto("links")
-      .values(links.map((url) => ({ url })))
-      .onConflict((oc) => oc.column("url").doNothing())
-      .execute();
+  if (campaign.track_clicks) {
+    // The unsubscribe link must never be wrapped in click-tracking below, or
+    // clicking it would log a spurious "link click" (and could even fire a
+    // link_clicked workflow trigger) before redirecting.
+    const links = extractLinks(html).filter((url) => url !== unsubPageUrl);
+    if (links.length > 0) {
+      await db
+        .insertInto("links")
+        .values(links.map((url) => ({ url })))
+        .onConflict((oc) => oc.column("url").doNothing())
+        .execute();
+    }
+    html = rewriteLinks(html, (url) =>
+      url === unsubPageUrl ? undefined : clickUrl(config, subscriber, campaign, url),
+    );
   }
-  html = rewriteLinks(html, (url) =>
-    url === unsubUrl ? undefined : clickUrl(config, subscriber, campaign, url),
-  );
-  html = appendOpenPixel(html, openPixelUrl(config, subscriber, campaign));
+  if (campaign.track_opens) {
+    html = appendOpenPixel(html, openPixelUrl(config, subscriber, campaign));
+  }
 
   return { subject: renderTemplate(campaign.subject, context), html, unsubscribeUrl: unsubUrl };
 }

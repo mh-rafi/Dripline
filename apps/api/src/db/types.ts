@@ -145,6 +145,8 @@ export interface CampaignsTable {
   window_start: Timestamp | null;
   window_count: Generated<number>;
   max_send_errors: Generated<number>;
+  track_opens: Generated<boolean>;
+  track_clicks: Generated<boolean>;
   to_send: Generated<number>;
   sent: Generated<number>;
   failed: Generated<number>;

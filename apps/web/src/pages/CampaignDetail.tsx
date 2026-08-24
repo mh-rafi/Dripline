@@ -25,6 +25,7 @@ import {
   FormLabel,
   FormRow,
   Skeleton,
+  Switch,
 } from "../components/ui/index.js";
 
 interface Analytics {
@@ -64,6 +65,8 @@ export default function CampaignDetail() {
   const [connectionIds, setConnectionIds] = useState<number[]>([]);
   const [rateLimitCount, setRateLimitCount] = useState("");
   const [rateLimitDurationSeconds, setRateLimitDurationSeconds] = useState<number | null>(null);
+  const [trackOpens, setTrackOpens] = useState(true);
+  const [trackClicks, setTrackClicks] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testEmail, setTestEmail] = useState("");
   const [testing, setTesting] = useState(false);
@@ -113,6 +116,8 @@ export default function CampaignDetail() {
         setTemplateId(c.template_id ? String(c.template_id) : "");
         setRateLimitCount(c.rate_limit_count ? String(c.rate_limit_count) : "");
         setRateLimitDurationSeconds(c.rate_limit_duration_seconds);
+        setTrackOpens(c.track_opens);
+        setTrackClicks(c.track_clicks);
         setListIds(c.lists?.map((l) => l.id) ?? []);
         setConnectionIds(c.connections?.map((conn) => conn.id) ?? []);
       }
@@ -155,6 +160,8 @@ export default function CampaignDetail() {
     setTemplateId(campaign.template_id ? String(campaign.template_id) : "");
     setRateLimitCount(campaign.rate_limit_count ? String(campaign.rate_limit_count) : "");
     setRateLimitDurationSeconds(campaign.rate_limit_duration_seconds);
+    setTrackOpens(campaign.track_opens);
+    setTrackClicks(campaign.track_clicks);
     setListIds(campaign.lists?.map((l) => l.id) ?? []);
     setConnectionIds(campaign.connections?.map((c) => c.id) ?? []);
     setEditing(true);
@@ -193,6 +200,8 @@ export default function CampaignDetail() {
         template_id: templateId ? Number(templateId) : null,
         rate_limit_count: rateLimitCount ? Number(rateLimitCount) : null,
         rate_limit_duration_seconds: rateLimitDurationSeconds,
+        track_opens: trackOpens,
+        track_clicks: trackClicks,
       });
       await api.put(`/campaigns/${id}/lists`, { list_ids: listIds });
       await api.put(`/campaigns/${id}/connections`, { connection_ids: connectionIds });
@@ -444,6 +453,18 @@ export default function CampaignDetail() {
             </div>
 
             <div className="mt-4 space-y-2">
+              <FormLabel>Tracking</FormLabel>
+              <div className="flex items-center gap-3">
+                <Switch checked={trackOpens} onCheckedChange={(v) => setTrackOpens(v === true)} />
+                <span className="text-sm">Track opens</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <Switch checked={trackClicks} onCheckedChange={(v) => setTrackClicks(v === true)} />
+                <span className="text-sm">Track clicks</span>
+              </div>
+            </div>
+
+            <div className="mt-4 space-y-2">
               <FormLabel>Send test email</FormLabel>
               <div className="flex items-center gap-2">
                 <Input
@@ -538,6 +559,12 @@ export default function CampaignDetail() {
         <div className="mt-2">
           <strong>Throttle:</strong>{" "}
           {formatRateLimit(campaign.rate_limit_count, campaign.rate_limit_duration_seconds)}
+        </div>
+        <div className="mt-2">
+          <strong>Tracking:</strong>{" "}
+          {[campaign.track_opens && "opens", campaign.track_clicks && "clicks"]
+            .filter(Boolean)
+            .join(", ") || <span className="text-muted-foreground">disabled</span>}
         </div>
       </BlockLayout>
 

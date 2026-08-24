@@ -22,6 +22,7 @@ import {
   CheckboxLabel,
   FormLabel,
   FormRow,
+  Switch,
 } from "../components/ui/index.js";
 
 export default function CampaignNew() {
@@ -42,6 +43,8 @@ export default function CampaignNew() {
   const [connectionIds, setConnectionIds] = useState<number[]>([]);
   const [rateLimitCount, setRateLimitCount] = useState("");
   const [rateLimitDurationSeconds, setRateLimitDurationSeconds] = useState<number | null>(null);
+  const [trackOpens, setTrackOpens] = useState(true);
+  const [trackClicks, setTrackClicks] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // Set once a draft has been silently created by a "Send test" click, so a
@@ -113,6 +116,8 @@ export default function CampaignNew() {
       connection_ids: connectionIds,
       rate_limit_count: rateLimitCount ? Number(rateLimitCount) : undefined,
       rate_limit_duration_seconds: rateLimitDurationSeconds ?? undefined,
+      track_opens: trackOpens,
+      track_clicks: trackClicks,
     };
   }
 
@@ -358,6 +363,18 @@ export default function CampaignNew() {
                 placeholder="e.g. 5"
               />
             </FormRow>
+          </div>
+
+          <div className="mt-4 space-y-2">
+            <FormLabel>Tracking</FormLabel>
+            <div className="flex items-center gap-3">
+              <Switch checked={trackOpens} onCheckedChange={(v) => setTrackOpens(v === true)} />
+              <span className="text-sm">Track opens</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <Switch checked={trackClicks} onCheckedChange={(v) => setTrackClicks(v === true)} />
+              <span className="text-sm">Track clicks</span>
+            </div>
           </div>
 
           <div className="mt-4 space-y-2">

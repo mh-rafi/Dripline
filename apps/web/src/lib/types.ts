@@ -81,6 +81,8 @@ export interface Campaign {
   template_id: number | null;
   rate_limit_count: number | null;
   rate_limit_duration_seconds: number | null;
+  track_opens: boolean;
+  track_clicks: boolean;
   to_send: number;
   sent: number;
   created_at: string;

@@ -28,7 +28,7 @@ Set these in `apps/api/.env` (see `apps/api/.env.example`):
 | `PORT`            | no (default 3000) | API port                                                                     |
 | `JWT_SECRET`      | yes in production | Signs admin session tokens -- must be a long random value                    |
 | `TRACKING_SECRET` | yes in production | Signs open/click/unsubscribe tracking links                                  |
-| `APP_URL`         | yes               | Public base URL, used to build tracking/unsubscribe links embedded in emails |
+| `APP_URL`         | yes               | Public base URL, used to build tracking/unsubscribe links embedded in emails (must be the origin serving the web app, not the API -- the unsubscribe page is a web app route; in dev this is the Vite dev server's origin, `http://localhost:5173`, which proxies `/api` to the API) |
 
 The insecure defaults baked into `config.ts` are fine for local development
 only -- always set real secrets before exposing an instance to the internet.
