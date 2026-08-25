@@ -4,7 +4,7 @@ import type { DB } from "../db/kysely.js";
 import type { Config } from "../config.js";
 import { verify } from "../lib/signing.js";
 import { TRANSPARENT_GIF } from "../lib/pixel.js";
-import { recordEvent } from "../services/workflows.js";
+import { recordEvent } from "../services/automations.js";
 import {
   unsubscribeFromAllLists,
   unsubscribeFromCampaignLists,
@@ -84,6 +84,32 @@ export default async function trackingRoutes(
     }
 
     return reply.redirect(url);
+  });
+
+  /** One-click (RFC 8058) target for automation emails. Automations aren't
+   * list-scoped the way a campaign is, so there is no "the lists this was sent
+   * through" to leave -- the honest equivalent of one-click here is leaving
+   * everything. The visible link in the body goes to the preference page
+   * instead, which offers per-list choice. */
+  app.all("/api/v1/unsubscribe/automation/:automationUuid/:subscriberUuid", async (req, reply) => {
+    const { automationUuid, subscriberUuid } = z
+      .object({ automationUuid: z.string().uuid(), subscriberUuid: z.string().uuid() })
+      .parse(req.params);
+    const { sig } = z
+      .object({ sig: z.string() })
+      .parse({ ...(req.query as object), ...(req.body as object) });
+
+    if (!verify(config.trackingSecret, [subscriberUuid, automationUuid], sig)) {
+      return reply.code(403).send({ error: "invalid unsubscribe link" });
+    }
+
+    const subscriber = await db
+      .selectFrom("subscribers")
+      .select("id")
+      .where("uuid", "=", subscriberUuid)
+      .executeTakeFirst();
+    if (subscriber) await unsubscribeFromAllLists(db, subscriber.id);
+    return { ok: true };
   });
 
   app.all("/api/v1/unsubscribe/:campaignUuid/:subscriberUuid", async (req, reply) => {

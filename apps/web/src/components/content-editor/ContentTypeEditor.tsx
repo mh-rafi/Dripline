@@ -1,5 +1,6 @@
 import { lazy, Suspense } from "react";
 import PlainTextEditor from "./PlainTextEditor.js";
+import MergeFieldPicker, { type MergeFieldScope } from "./MergeFieldPicker.js";
 import type { ContentType } from "../../lib/types.js";
 import { convertContent, isLossyTarget, type ContentValue } from "../../lib/contentConversion.js";
 import { Button, Skeleton } from "../ui/index.js";
@@ -28,6 +29,12 @@ interface ContentTypeEditorProps {
   value: ContentValue;
   onChangeType: (type: ContentType) => void;
   onChangeValue: (value: ContentValue) => void;
+  /** Restricts the offered modes. Automation emails use this to leave out the
+   * visual builder, which needs far more room than the builder's sidebar. */
+  allowedTypes?: ContentType[];
+  /** Which merge fields the picker offers -- an automation email resolves
+   * different ones than a campaign. */
+  mergeFieldScope?: MergeFieldScope;
 }
 
 /**
@@ -49,7 +56,12 @@ export default function ContentTypeEditor({
   value,
   onChangeType,
   onChangeValue,
+  allowedTypes,
+  mergeFieldScope = "campaign",
 }: ContentTypeEditorProps) {
+  const types = allowedTypes
+    ? CONTENT_TYPES.filter((t) => allowedTypes.includes(t.value))
+    : CONTENT_TYPES;
   function switchTo(newType: ContentType) {
     if (newType === contentType) return;
     if (isLossyTarget(newType) && (value.body.trim() || value.body_source?.trim())) {
@@ -64,17 +76,24 @@ export default function ContentTypeEditor({
 
   return (
     <div>
-      <div className="mb-2 flex gap-2">
-        {CONTENT_TYPES.map((t) => (
-          <Button
-            key={t.value}
-            type="button"
-            variant={contentType === t.value ? "default" : "outline"}
-            onClick={() => switchTo(t.value)}
-          >
-            {t.label}
-          </Button>
-        ))}
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-2">
+          {types.map((t) => (
+            <Button
+              key={t.value}
+              type="button"
+              variant={contentType === t.value ? "default" : "outline"}
+              onClick={() => switchTo(t.value)}
+            >
+              {t.label}
+            </Button>
+          ))}
+        </div>
+        {/* ml-auto keeps the picker right-aligned even when the toolbar wraps
+            onto a second line (the automation builder's sidebar is narrow). */}
+        <div className="ml-auto">
+          <MergeFieldPicker scope={mergeFieldScope} />
+        </div>
       </div>
 
       {contentType === "plain" ? (

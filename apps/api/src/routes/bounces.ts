@@ -8,7 +8,7 @@ const BounceBody = z.object({
   campaign_uuid: z.string().uuid().optional(),
   type: z.enum(["hard", "soft", "complaint"]).default("hard"),
   source: z.string().optional(),
-  meta: z.record(z.unknown()).optional(),
+  meta: z.record(z.string(), z.unknown()).optional(),
 });
 
 /** Generic bounce-webhook ingestion. Provider-specific formats (SES, Postmark, etc.)

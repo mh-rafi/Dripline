@@ -9,6 +9,7 @@ interface BadgeProps {
 const statusColorMap: Record<string, string> = {
   running: "bg-success/15 text-success border border-success/20",
   active: "bg-success/15 text-success border border-success/20",
+  published: "bg-success/15 text-success border border-success/20",
   finished: "bg-primary/15 text-primary border border-primary/20",
   completed: "bg-primary/15 text-primary border border-primary/20",
   confirmed: "bg-success/15 text-success border border-success/20",
@@ -22,6 +23,8 @@ const statusColorMap: Record<string, string> = {
   failed: "bg-destructive/15 text-destructive border border-destructive/20",
   draft: "bg-muted text-muted-foreground",
   skipped: "bg-muted text-muted-foreground",
+  public: "bg-primary/15 text-primary border border-primary/20",
+  private: "bg-warning/15 text-warning border border-warning/20",
 };
 
 export default function Badge({ status, label, title }: BadgeProps) {

@@ -10,11 +10,12 @@ import SubscriberDetail from "./pages/SubscriberDetail.js";
 import Lists from "./pages/Lists.js";
 import Templates from "./pages/Templates.js";
 import Connections from "./pages/Connections.js";
+import ConnectionForm from "./pages/ConnectionForm.js";
 import Campaigns from "./pages/Campaigns.js";
 import CampaignNew from "./pages/CampaignNew.js";
 import CampaignDetail from "./pages/CampaignDetail.js";
-import Workflows from "./pages/Workflows.js";
-import WorkflowDetail from "./pages/WorkflowDetail.js";
+import Automations from "./pages/Automations.js";
+import AutomationBuilder from "./pages/AutomationBuilder.js";
 import Settings from "./pages/Settings.js";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -48,13 +49,22 @@ export default function App() {
         <Route path="/lists" element={<Lists />} />
         <Route path="/templates" element={<Templates />} />
         <Route path="/connections" element={<Connections />} />
+        <Route path="/connections/new" element={<ConnectionForm />} />
+        <Route path="/connections/:id" element={<ConnectionForm />} />
         <Route path="/campaigns" element={<Campaigns />} />
         <Route path="/campaigns/new" element={<CampaignNew />} />
         <Route path="/campaigns/:id" element={<CampaignDetail />} />
-        <Route path="/workflows" element={<Workflows />} />
-        <Route path="/workflows/:id" element={<WorkflowDetail />} />
+        <Route path="/automations" element={<Automations />} />
         <Route path="/settings" element={<Settings />} />
       </Route>
+      <Route
+        path="/automations/:id"
+        element={
+          <RequireAuth>
+            <AutomationBuilder />
+          </RequireAuth>
+        }
+      />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

@@ -189,9 +189,12 @@ const SelectItem = React.forwardRef<
 ));
 SelectItem.displayName = SelectPrimitive.Item.displayName;
 
+// `onToggle` is dropped alongside `onSelect`: React 19's types add a native
+// `onToggle` DOM handler whose signature this component's own callback
+// deliberately differs from.
 interface MultiSelectItemProps extends Omit<
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item>,
-  "onSelect"
+  "onSelect" | "onToggle"
 > {
   value: string;
   selected?: boolean;

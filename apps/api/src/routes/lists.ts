@@ -25,6 +25,12 @@ export default async function listRoutes(app: FastifyInstance, opts: { db: DB })
           .select((e) => e.fn.countAll().as("count"))
           .whereRef("subscriber_lists.list_id", "=", "lists.id")
           .as("subscriber_count"),
+        eb
+          .selectFrom("subscriber_lists")
+          .select((e) => e.fn.countAll().as("count"))
+          .whereRef("subscriber_lists.list_id", "=", "lists.id")
+          .where("subscriber_lists.status", "=", "unsubscribed")
+          .as("unsubscribed_count"),
       ])
       .orderBy("id", "desc")
       .execute();

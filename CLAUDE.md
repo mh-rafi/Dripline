@@ -11,11 +11,15 @@ Vite, Tailwind v4 + shadcn/ui, light/dark/system theming).
   Start here, then open the specific phase file you need — each is kept
   current with what's actually been built and verified, not just planned.
 - [docs/api-reference.md](docs/api-reference.md) — every endpoint's shape.
+- [docs/plan/automations_v2.md](docs/plan/automations_v2.md) — the node-graph
+  automation builder that replaces Phases 4/5. Phase 1 built & verified;
+  Phases 2–4 (remaining actions, conditional branching, reporting) planned.
+  Read it before touching `apps/*/src/automations/`.
 - [docs/plan/UI_UX_Plan.md](docs/plan/UI_UX_Plan.md) and
   [docs/plan/subscriber_bulk_actions.md](docs/plan/subscriber_bulk_actions.md) —
-  the two most recent large plans (Tailwind/shadcn redesign, subscriber
-  bulk actions + pagination), both implemented and reviewed; also linked
-  from Phase 6's file.
+  two earlier large plans (Tailwind/shadcn redesign, subscriber bulk actions
+  and pagination), both implemented and reviewed; also linked from Phase 6's
+  file.
 
 ## Conventions
 
@@ -28,5 +32,21 @@ Vite, Tailwind v4 + shadcn/ui, light/dark/system theming).
   `sql`'s own interpolation so they're parameterized correctly).
 - No comments unless explaining a non-obvious _why_ (a bug fix reason, a
   deliberate divergence from an obvious approach).
+- Automations are registry-driven: a new trigger or action is one entry in
+  `apps/api/src/automations/{triggers,actions}.ts` plus its UI counterpart in
+  `apps/web/src/automations/{triggers,actions}.tsx` — never a `switch` in the
+  engine, the canvas or the sidebar. Graph edges are node-id pointers
+  (`next`), not array order, so branching can be added later.
+- The root `overrides` pin for `@types/react`/`@types/react-dom` is load-bearing:
+  Radix and React Flow declare them as `*` peers, so without it npm hoists a
+  second (older) copy and every `ReactNode` stops matching itself. Don't drop it
+  while any dependency still peers on `@types/react: "*"`.
 - Root Prettier/ESLint cover both apps: `npm run build && npm run lint &&
 npm run format` before considering anything done.
+
+## Verifying
+
+You do not have to in browser after implementation of a feature.
+Just tell user what to do in a short message to verify the feature you just implemented.
+You'll verify if the code build without error. If possible you can test server side API and code.
+But you do not have to write unit test code.

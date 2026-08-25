@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from "react";
+import MergeFieldPicker from "../components/content-editor/MergeFieldPicker.js";
 import { api } from "../lib/api.js";
 import type { Template } from "../lib/types.js";
 import PreviewModal from "../components/PreviewModal.js";
@@ -137,7 +138,10 @@ export default function Templates() {
               <Input required value={name} onChange={(e) => setName(e.target.value)} />
             </div>
             <div className="space-y-2">
-              <FormLabel>Body (wrap the campaign content with {"{{ Body }}"})</FormLabel>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <FormLabel>Body (wrap the campaign content with {"{{ Body }}"})</FormLabel>
+                <MergeFieldPicker scope="template" />
+              </div>
               <Suspense fallback={<Skeleton className="h-48" />}>
                 <HtmlEditor value={body} onChange={setBody} />
               </Suspense>

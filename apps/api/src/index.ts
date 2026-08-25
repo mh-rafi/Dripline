@@ -9,11 +9,15 @@ import {
   scheduleCampaignScan,
 } from "./jobs/campaignDispatch.js";
 import {
-  registerWorkflowEventsWorker,
-  registerWorkflowScanWorker,
-  registerWorkflowStepWorker,
-  scheduleWorkflowScans,
-} from "./jobs/workflowEngine.js";
+  registerAutomationScanWorker,
+  registerAutomationStepWorker,
+  scheduleAutomationScan,
+} from "./jobs/automationEngine.js";
+import {
+  registerBounceScanConnectionWorker,
+  registerBounceScanWorker,
+  scheduleBounceScan,
+} from "./jobs/bounceScan.js";
 
 const config = loadConfig();
 const pool = createPool(config);
@@ -22,11 +26,13 @@ const db = createKysely(pool);
 const boss = await createBoss(config);
 await registerCampaignScanWorker(boss, db);
 await registerCampaignDispatchWorker(boss, db, config);
-await registerWorkflowScanWorker(boss, db);
-await registerWorkflowStepWorker(boss, db, config);
-await registerWorkflowEventsWorker(boss, db);
+await registerAutomationScanWorker(boss, db);
+await registerAutomationStepWorker(boss, db, config);
+await registerBounceScanWorker(boss, db);
+await registerBounceScanConnectionWorker(boss, db);
 await scheduleCampaignScan(boss);
-await scheduleWorkflowScans(boss);
+await scheduleAutomationScan(boss);
+await scheduleBounceScan(boss);
 
 const app = buildApp(pool, db, config);
 

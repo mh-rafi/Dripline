@@ -9,23 +9,28 @@ planned. Phases are built roughly in order; dependencies are noted in each file.
 
 ## Phases
 
-| #   | Phase                                                       | Status                                                      |
-| --- | ----------------------------------------------------------- | ----------------------------------------------------------- |
-| 0   | [Project scaffolding](phases/00-scaffolding.md)             | ✅ built & verified                                         |
-| 1   | [Subscribers & lists](phases/01-subscribers-lists.md)       | Core CRUD solid; double opt-in confirm flow still open      |
-| 2   | [Dispatch engine](phases/02-dispatch-engine.md)             | ✅ built & verified                                         |
-| 3   | [Connections](phases/03-connections.md)                     | ✅ built & verified                                         |
-| 4   | [Automations (drip)](phases/04-automations.md)              | ✅ built & verified                                         |
-| 5   | [Event-based triggers](phases/05-event-triggers.md)         | Built, never exercised end-to-end                           |
-| 6   | [Admin UI](phases/06-admin-ui.md)                           | Most pages browser-verified; workflows/lists still API-only |
-| 7   | [Hardening & OSS launch prep](phases/07-hardening.md)       | Partially done, see file                                    |
-| 8   | [Campaign body editing modes](phases/08-content-editing.md) | ✅ built & verified                                         |
+| #   | Phase                                                       | Status                                                 |
+| --- | ----------------------------------------------------------- | ------------------------------------------------------ |
+| 0   | [Project scaffolding](phases/00-scaffolding.md)             | ✅ built & verified                                    |
+| 1   | [Subscribers & lists](phases/01-subscribers-lists.md)       | Core CRUD solid; double opt-in confirm flow still open |
+| 2   | [Dispatch engine](phases/02-dispatch-engine.md)             | ✅ built & verified                                    |
+| 3   | [Connections](phases/03-connections.md)                     | ✅ built & verified                                    |
+| 4   | [Automations (drip)](phases/04-automations.md)              | Superseded by [Automations v2](automations_v2.md)      |
+| 5   | [Event-based triggers](phases/05-event-triggers.md)         | Superseded by [Automations v2](automations_v2.md)      |
+| 6   | [Admin UI](phases/06-admin-ui.md)                           | Most pages browser-verified; lists still API-only      |
+| 7   | [Hardening & OSS launch prep](phases/07-hardening.md)       | Partially done, see file                               |
+| 8   | [Campaign body editing modes](phases/08-content-editing.md) | ✅ built & verified                                    |
 
 ## Other plans (implemented, kept for reference)
 
 - [UI_UX_Plan.md](UI_UX_Plan.md) -- Tailwind/shadcn redesign + theming (Phase 6 addendum).
 - [subscriber_bulk_actions.md](subscriber_bulk_actions.md) -- bulk actions + pagination
   (Phase 6 addendum).
+- [mailbox_bounce_scanning.md](mailbox_bounce_scanning.md) -- IMAP mailbox-scan bounce
+  detection, per-connection (Phase 7 addendum). Planning only, not started.
+- [automations_v2.md](automations_v2.md) -- the visual node-graph automation builder that
+  replaces Phases 4 and 5 (canvas + sidebar UI, trigger/action registries, branching
+  roadmap). Phase 1 of that plan is built; Phases 2-4 are not started.
 
 ## Explicitly not done
 

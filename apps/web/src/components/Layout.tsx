@@ -41,7 +41,7 @@ const navLinks = [
   { to: "/lists", label: "Lists", icon: List, end: false },
   { to: "/templates", label: "Templates", icon: FileText, end: false },
   { to: "/campaigns", label: "Campaigns", icon: Mail, end: false },
-  { to: "/workflows", label: "Workflows", icon: Workflow, end: false },
+  { to: "/automations", label: "Automations", icon: Workflow, end: false },
   { to: "/connections", label: "Connections", icon: Plug, end: false },
   { to: "/settings", label: "Settings", icon: SettingsIcon, end: false },
 ];

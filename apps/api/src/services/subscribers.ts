@@ -1,7 +1,7 @@
 import { sql } from "kysely";
 import type { DB } from "../db/kysely.js";
 import { NotFoundError } from "../lib/errors.js";
-import { triggerListJoined, triggerTagApplied } from "./workflows.js";
+import { fireEvent } from "./automations.js";
 
 export async function getSubscriberOrThrow(db: DB, id: number) {
   const subscriber = await db
@@ -10,6 +10,48 @@ export async function getSubscriberOrThrow(db: DB, id: number) {
     .where("id", "=", id)
     .executeTakeFirst();
   if (!subscriber) throw new NotFoundError("subscriber");
+  return subscriber;
+}
+
+export interface CreateSubscriberInput {
+  email: string;
+  name?: string;
+  attribs?: Record<string, unknown>;
+}
+
+/**
+ * Upserts a contact by email and fires `contact_created` only when the row is
+ * genuinely new. Every path that can introduce a contact (admin create, CSV
+ * import, automation webhook) goes through here or reports creation itself, so
+ * the trigger can't fire twice for one person.
+ */
+export async function createSubscriber(db: DB, input: CreateSubscriberInput) {
+  const existing = await db
+    .selectFrom("subscribers")
+    .selectAll()
+    .where("email", "=", input.email)
+    .executeTakeFirst();
+
+  if (existing) {
+    if (input.name === undefined && input.attribs === undefined) return existing;
+    return db
+      .updateTable("subscribers")
+      .set({
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.attribs !== undefined ? { attribs: input.attribs } : {}),
+      })
+      .where("id", "=", existing.id)
+      .returningAll()
+      .executeTakeFirstOrThrow();
+  }
+
+  const subscriber = await db
+    .insertInto("subscribers")
+    .values({ email: input.email, name: input.name ?? "", attribs: input.attribs ?? {} })
+    .returningAll()
+    .executeTakeFirstOrThrow();
+
+  await fireEvent(db, { type: "contact_created", subscriberId: subscriber.id, data: {} });
   return subscriber;
 }
 
@@ -44,7 +86,7 @@ export async function addToList(
     )
     .execute();
 
-  await triggerListJoined(db, subscriberId, listId);
+  await fireEvent(db, { type: "list_applied", subscriberId, data: { listId } });
 }
 
 /**
@@ -73,7 +115,7 @@ export async function addToListForImport(
         )
       : query.onConflict((oc) => oc.columns(["subscriber_id", "list_id"]).doNothing())
   ).execute();
-  await triggerListJoined(db, subscriberId, listId);
+  await fireEvent(db, { type: "list_applied", subscriberId, data: { listId } });
 }
 
 async function defaultStatusForList(db: DB, listId: number): Promise<"unconfirmed" | "confirmed"> {
@@ -95,6 +137,8 @@ export async function removeFromList(db: DB, subscriberId: number, listId: numbe
     .where("subscriber_id", "=", subscriberId)
     .where("list_id", "=", listId)
     .execute();
+
+  await fireEvent(db, { type: "list_removed", subscriberId, data: { listId } });
 }
 
 /**
@@ -149,7 +193,6 @@ export async function addTag(db: DB, subscriberId: number, tag: string) {
     const attribs = { ...subscriber.attribs, tags: [...tags, tag] };
     await db.updateTable("subscribers").set({ attribs }).where("id", "=", subscriberId).execute();
   }
-  await triggerTagApplied(db, subscriberId, tag);
 }
 
 export async function removeTag(db: DB, subscriberId: number, tag: string) {

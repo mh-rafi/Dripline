@@ -8,6 +8,7 @@ import {
   addToList,
   addToListForImport,
   blocklistSubscriber,
+  createSubscriber,
   getSubscriberOrThrow,
   removeFromList,
   removeTag,
@@ -21,17 +22,34 @@ const CreateSubscriber = z.object({
   email: z.string().email(),
   name: z.string().optional(),
   status: z.enum(["enabled", "blocklisted"]).default("enabled"),
-  attribs: z.record(z.unknown()).optional(),
+  attribs: z.record(z.string(), z.unknown()).optional(),
   list_ids: z.array(z.number().int()).optional(),
   preconfirm: z.boolean().default(false),
 });
 const UpdateSubscriber = z.object({
   name: z.string().optional(),
-  attribs: z.record(z.unknown()).optional(),
+  attribs: z.record(z.string(), z.unknown()).optional(),
 });
+const ListMembershipStatusEnum = z.enum(["unconfirmed", "confirmed", "unsubscribed"]);
+
+// Comma-separated query-string values -- GET /subscribers takes list_ids and
+// list_statuses this way (there's no repeated-param or JSON encoding for a
+// plain query string), unlike the JSON bodies below which take real arrays.
+function commaList<T extends z.ZodTypeAny>(schema: T) {
+  return z.preprocess(
+    (val) => (typeof val === "string" && val.length > 0 ? val.split(",") : undefined),
+    z.array(schema).optional(),
+  );
+}
+
 const ListQuery = z.object({
   q: z.string().optional(),
-  list_id: z.coerce.number().int().optional(),
+  list_ids: commaList(z.coerce.number().int()),
+  list_statuses: commaList(ListMembershipStatusEnum),
+  blocklisted: z
+    .string()
+    .optional()
+    .transform((v) => v === "true"),
   limit: z.coerce.number().int().min(1).max(200).default(50),
   offset: z.coerce.number().int().min(0).default(0),
 });
@@ -44,7 +62,12 @@ const BulkSelector = z.union([
     ids: z.array(z.number().int()).min(1).max(1000),
   }),
   z.object({
-    query: z.object({ q: z.string().optional(), list_id: z.number().int().optional() }),
+    query: z.object({
+      q: z.string().optional(),
+      list_ids: z.array(z.number().int()).optional(),
+      list_statuses: z.array(ListMembershipStatusEnum).optional(),
+      blocklisted: z.boolean().optional(),
+    }),
     all: z.literal(true),
   }),
 ]);
@@ -61,15 +84,22 @@ function applySubscriberFilter<O>(
     const q = filter.q;
     b = b.where((eb) => eb.or([eb("email", "ilike", `%${q}%`), eb("name", "ilike", `%${q}%`)]));
   }
-  if (filter.list_id) {
-    const listId = filter.list_id;
-    b = b.where((eb) =>
-      eb(
-        "subscribers.id",
-        "in",
-        eb.selectFrom("subscriber_lists").select("subscriber_id").where("list_id", "=", listId),
-      ),
-    );
+  const hasListFilter = !!(filter.list_ids?.length || filter.list_statuses?.length);
+  if (hasListFilter || filter.blocklisted) {
+    b = b.where((eb) => {
+      const clauses = [];
+      if (hasListFilter) {
+        let sub = eb.selectFrom("subscriber_lists").select("subscriber_id");
+        if (filter.list_ids?.length) sub = sub.where("list_id", "in", filter.list_ids);
+        if (filter.list_statuses?.length) sub = sub.where("status", "in", filter.list_statuses);
+        clauses.push(eb("subscribers.id", "in", sub));
+      }
+      // blocklisted is a global account state, OR'd rather than AND'd with
+      // the list condition -- see SubscriberFilter.blocklisted in
+      // subscriberFilter.ts for why.
+      if (filter.blocklisted) clauses.push(eb("subscribers.status", "=", "blocklisted"));
+      return eb.or(clauses);
+    });
   }
   return b;
 }
@@ -80,7 +110,12 @@ export default async function subscriberRoutes(app: FastifyInstance, opts: { db:
 
   app.get("/api/v1/subscribers", async (req) => {
     const query = ListQuery.parse(req.query);
-    const filter: SubscriberFilter = { q: query.q, list_id: query.list_id };
+    const filter: SubscriberFilter = {
+      q: query.q,
+      list_ids: query.list_ids,
+      list_statuses: query.list_statuses,
+      blocklisted: query.blocklisted,
+    };
 
     const pageQuery = applySubscriberFilter(
       db
@@ -118,12 +153,11 @@ export default async function subscriberRoutes(app: FastifyInstance, opts: { db:
 
   app.post("/api/v1/subscribers", async (req, reply) => {
     const body = CreateSubscriber.parse(req.body);
-    let subscriber = await db
-      .insertInto("subscribers")
-      .values({ email: body.email, name: body.name ?? "", attribs: body.attribs ?? {} })
-      .onConflict((oc) => oc.column("email").doUpdateSet({ name: body.name ?? "" }))
-      .returningAll()
-      .executeTakeFirstOrThrow();
+    let subscriber = await createSubscriber(db, {
+      email: body.email,
+      name: body.name ?? "",
+      attribs: body.attribs,
+    });
 
     for (const listId of body.list_ids ?? []) {
       await addToList(db, subscriber.id, listId, body.preconfirm ? "confirmed" : undefined);
@@ -212,7 +246,7 @@ export default async function subscriberRoutes(app: FastifyInstance, opts: { db:
       z.object({
         email: z.string().email(),
         name: z.string().optional(),
-        attribs: z.record(z.unknown()).optional(),
+        attribs: z.record(z.string(), z.unknown()).optional(),
       }),
     ),
   });
@@ -242,11 +276,14 @@ export default async function subscriberRoutes(app: FastifyInstance, opts: { db:
             .execute();
         }
       } else {
-        const row = await db
-          .insertInto("subscribers")
-          .values({ email: s.email, name: s.name ?? "", attribs: s.attribs ?? {} })
-          .returning("id")
-          .executeTakeFirstOrThrow();
+        // Goes through the service so an imported contact fires
+        // `contact_created` like any other -- a large import therefore enrolls
+        // every new contact, which is intended (see docs/plan/automations_v2.md).
+        const row = await createSubscriber(db, {
+          email: s.email,
+          name: s.name ?? "",
+          attribs: s.attribs,
+        });
         subscriberId = row.id;
       }
 
@@ -287,6 +324,9 @@ export default async function subscriberRoutes(app: FastifyInstance, opts: { db:
       list_ids: z.array(z.number().int()).min(1),
       action: z.enum(["add", "remove"]),
       status: z.enum(["unconfirmed", "confirmed"]).optional(),
+      // Off by default: one bulk change must not silently enrol thousands of
+      // contacts in automations (see services/bulkActions.ts).
+      trigger_automations: z.boolean().default(false),
     })
     .and(BulkSelector)
     .superRefine((data, ctx) => {
@@ -303,7 +343,10 @@ export default async function subscriberRoutes(app: FastifyInstance, opts: { db:
     const body = BulkListsBody.parse(req.body);
     const selector: { ids: number[] } | { query: SubscriberFilter; all: true } =
       "ids" in body ? { ids: body.ids } : { query: body.query, all: true };
-    const affected = await bulkLists(db, selector, body.list_ids, body.action, body.status);
+    const affected = await bulkLists(db, selector, body.list_ids, body.action, {
+      status: body.status,
+      triggerAutomations: body.trigger_automations,
+    });
     return { affected };
   });
 

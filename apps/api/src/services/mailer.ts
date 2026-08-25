@@ -99,7 +99,7 @@ export async function renderCampaignEmail(
   if (campaign.track_clicks) {
     // The unsubscribe link must never be wrapped in click-tracking below, or
     // clicking it would log a spurious "link click" (and could even fire a
-    // link_clicked workflow trigger) before redirecting.
+    // link_clicked automation trigger) before redirecting.
     const links = extractLinks(html).filter((url) => url !== unsubPageUrl);
     if (links.length > 0) {
       await db

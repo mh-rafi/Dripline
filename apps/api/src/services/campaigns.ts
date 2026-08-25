@@ -33,6 +33,71 @@ export async function getCampaignOrThrow(db: DB, id: number) {
 }
 
 /**
+ * Duplicates a campaign as a new draft: same content, lists, and connection
+ * chain, but never inherits the source's status, schedule, or send
+ * progress -- those describe a specific past/in-progress send, not the
+ * content being copied. `campaign_emails`/analytics are never touched, so
+ * the duplicate starts with zero send history of its own.
+ */
+export async function duplicateCampaign(db: DB, id: number) {
+  const source = await getCampaignOrThrow(db, id);
+
+  const copy = await db
+    .insertInto("campaigns")
+    .values({
+      name: `Copy of ${source.name}`,
+      subject: source.subject,
+      body: source.body,
+      body_source: source.body_source,
+      content_type: source.content_type,
+      from_email: source.from_email,
+      template_id: source.template_id,
+      rate_limit_count: source.rate_limit_count,
+      rate_limit_duration_seconds: source.rate_limit_duration_seconds,
+      track_opens: source.track_opens,
+      track_clicks: source.track_clicks,
+      // Deliberately not copied: send_at (a schedule for the original
+      // send, not this one) and status (always starts as "draft").
+      status: "draft",
+    })
+    .returningAll()
+    .executeTakeFirstOrThrow();
+
+  const lists = await db
+    .selectFrom("campaign_lists")
+    .select("list_id")
+    .where("campaign_id", "=", id)
+    .execute();
+  if (lists.length > 0) {
+    await db
+      .insertInto("campaign_lists")
+      .values(lists.map((l) => ({ campaign_id: copy.id, list_id: l.list_id })))
+      .execute();
+  }
+
+  const connections = await db
+    .selectFrom("campaign_connections")
+    .select(["connection_id", "priority"])
+    .where("campaign_id", "=", id)
+    .orderBy("priority", "asc")
+    .execute();
+  if (connections.length > 0) {
+    await db
+      .insertInto("campaign_connections")
+      .values(
+        connections.map((c) => ({
+          campaign_id: copy.id,
+          connection_id: c.connection_id,
+          priority: c.priority,
+        })),
+      )
+      .execute();
+  }
+
+  return copy;
+}
+
+/**
  * Materializes campaign_emails rows for every currently-eligible subscriber
  * across the campaign's lists. Idempotent (ON CONFLICT DO NOTHING) so it's
  * safe to call again on resume -- e.g. after list membership changed while

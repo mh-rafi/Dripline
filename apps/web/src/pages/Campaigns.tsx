@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { api } from "../lib/api.js";
 import type { Campaign } from "../lib/types.js";
 import Badge from "../components/Badge.js";
@@ -14,14 +14,31 @@ import {
   TableHead,
   TableCell,
   TableEmptyState,
+  toast,
 } from "../components/ui/index.js";
 
 export default function Campaigns() {
+  const navigate = useNavigate();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [duplicatingId, setDuplicatingId] = useState<number | null>(null);
 
-  useEffect(() => {
+  function load() {
     api.get<Campaign[]>("/campaigns").then(setCampaigns);
-  }, []);
+  }
+  useEffect(load, []);
+
+  async function duplicate(id: number) {
+    setDuplicatingId(id);
+    try {
+      const copy = await api.post<Campaign>(`/campaigns/${id}/duplicate`);
+      toast.success("Campaign duplicated");
+      navigate(`/campaigns/${copy.id}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "failed to duplicate campaign");
+    } finally {
+      setDuplicatingId(null);
+    }
+  }
 
   return (
     <div>
@@ -43,6 +60,7 @@ export default function Campaigns() {
               <TableHead>Status</TableHead>
               <TableHead>Sent</TableHead>
               <TableHead>Created</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -61,6 +79,16 @@ export default function Campaigns() {
                 </TableCell>
                 <TableCell className="text-muted-foreground">
                   {new Date(c.created_at).toLocaleDateString()}
+                </TableCell>
+                <TableCell className="text-right">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={duplicatingId === c.id}
+                    onClick={() => duplicate(c.id)}
+                  >
+                    {duplicatingId === c.id ? "Duplicating…" : "Duplicate"}
+                  </Button>
                 </TableCell>
               </TableRow>
             ))}

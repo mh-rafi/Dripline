@@ -8,11 +8,19 @@ export interface TemplateContext {
     Name: string;
     Attribs: Record<string, unknown>;
   };
-  Campaign: {
+  /** Present for campaign sends. Automation emails carry `Automation` instead;
+   * Mustache renders an unknown key as empty, so a body written for one
+   * context never throws in the other. */
+  Campaign?: {
     ID: number;
     UUID: string;
     Name: string;
     Subject: string;
+  };
+  Automation?: {
+    ID: number;
+    UUID: string;
+    Name: string;
   };
   UnsubscribeURL: string;
 }

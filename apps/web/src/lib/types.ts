@@ -15,6 +15,9 @@ export interface List {
   optin: "single" | "double";
   description: string;
   subscriber_count?: number;
+  unsubscribed_count?: number;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Template {
@@ -48,6 +51,22 @@ export interface SesConnectionConfig {
 
 export type ConnectionConfig = SmtpConnectionConfig | SesConnectionConfig;
 
+export interface BounceMailboxConfig {
+  enabled: boolean;
+  host: string;
+  port: number;
+  tls: boolean;
+  username: string;
+  password: string;
+  /** Where bounces should be sent -- distinct from `username`, which is an
+   * IMAP login and not always a real email address. */
+  email: string;
+  use_sending_credentials: boolean;
+  folder: string;
+  max_age_days: number;
+  max_messages_per_scan: number;
+}
+
 export interface Connection {
   id: number;
   name: string;
@@ -61,6 +80,9 @@ export interface Connection {
   error_count: number;
   disabled_reason: string | null;
   list_unsubscribe_header: boolean;
+  bounce_config: BounceMailboxConfig | null;
+  bounce_error_count: number;
+  bounce_disabled_reason: string | null;
   config: ConnectionConfig & Record<string, unknown>;
 }
 
@@ -108,20 +130,49 @@ export interface CampaignProgress {
   total: number;
 }
 
-export type WorkflowTriggerType =
-  "list_joined" | "tag_applied" | "webhook" | "link_clicked" | "manual";
-export type WorkflowStatus = "draft" | "active" | "paused";
+export type AutomationStatus = "draft" | "published" | "paused";
+export type AutomationReentryMode = "once" | "multiple";
 
-export interface Workflow {
+/** One block on the builder canvas. `next` is a node id (or null for the end
+ * of a path) -- pointer edges, not array order, so conditional branches can be
+ * added later. See docs/plan/automations_v2.md. */
+export interface AutomationNode {
+  id: string;
+  type: string;
+  title?: string;
+  note?: string;
+  config: Record<string, unknown>;
+  next: string | null;
+}
+
+export interface AutomationGraph {
+  entry: string | null;
+  nodes: AutomationNode[];
+}
+
+export interface Automation {
   id: number;
   uuid: string;
   name: string;
-  trigger_type: WorkflowTriggerType;
+  status: AutomationStatus;
+  trigger_type: string;
   trigger_config: Record<string, unknown>;
-  steps: unknown[];
-  status: WorkflowStatus;
-  reentry_allowed: boolean;
-  enrollment_counts?: { status: string; count: number }[];
+  graph: AutomationGraph;
+  reentry_mode: AutomationReentryMode;
+  created_at: string;
+  updated_at: string;
+  enrollment_counts?: { status: string; count: string }[];
+}
+
+export interface AutomationEnrollment {
+  id: string;
+  status: "active" | "completed" | "cancelled";
+  current_node_id: string | null;
+  next_run_at: string | null;
+  started_at: string;
+  completed_at: string | null;
+  subscriber_id: number;
+  email: string;
 }
 
 export interface ApiKey {

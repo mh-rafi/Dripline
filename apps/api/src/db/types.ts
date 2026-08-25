@@ -91,6 +91,36 @@ export interface SesConnectionConfig {
 
 export type ConnectionConfig = SmtpConnectionConfig | SesConnectionConfig;
 
+/** Per-connection bounce-mailbox (IMAP) scan config -- see
+ * docs/plan/mailbox_bounce_scanning.md. Null on the row means scanning is
+ * unavailable/never configured; `enabled` is the actual on/off switch once
+ * configured (so a user can temporarily pause without losing the fields). */
+export interface BounceMailboxConfig {
+  enabled: boolean;
+  // Always required when enabled -- an IMAP host is never safely derivable
+  // from the connection's own sending config (different hostname almost
+  // every time, even for the same mailbox).
+  host: string;
+  port: number;
+  tls: boolean;
+  /** IMAP login only -- not necessarily an email address (some providers,
+   * e.g. shared/cPanel Dovecot setups, authenticate with a bare local-part
+   * or SAM account name). Ignored in favor of this connection's own sending
+   * login when use_sending_credentials is true (smtp connections only). */
+  username: string;
+  password: string;
+  /** The address bounces should actually be sent to -- distinct from
+   * `username` since an IMAP login isn't always a real email address (see
+   * above). Required, and only meaningful, when use_sending_credentials is
+   * false: drives the outgoing envelope-from override in
+   * services/connections.ts so DSNs actually route to this mailbox. */
+  email: string;
+  use_sending_credentials: boolean;
+  folder: string;
+  max_age_days: number;
+  max_messages_per_scan: number;
+}
+
 export interface ConnectionsTable {
   id: Generated<number>;
   name: string;
@@ -107,6 +137,15 @@ export interface ConnectionsTable {
   error_count: Generated<number>;
   disabled_reason: string | null;
   list_unsubscribe_header: Generated<boolean>;
+  bounce_config: BounceMailboxConfig | null;
+  /** Scanner-owned cursor state, not user-editable -- see
+   * services/bounceScanner.ts. bounce_last_uidvalidity is BIGINT, which
+   * node-postgres returns as a string (no custom type parser is registered
+   * in this project -- see db.ts), not a JS number. */
+  bounce_last_uid: number | null;
+  bounce_last_uidvalidity: string | null;
+  bounce_error_count: Generated<number>;
+  bounce_disabled_reason: string | null;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
 }
@@ -171,6 +210,7 @@ export interface CampaignEmailsTable {
   connection_id: number | null;
   attempts: Generated<number>;
   error: string | null;
+  message_id: string | null;
   sent_at: Timestamp | null;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
@@ -198,45 +238,60 @@ export interface LinkClicksTable {
   created_at: Generated<Timestamp>;
 }
 
-export type WorkflowTriggerType =
-  "list_joined" | "tag_applied" | "webhook" | "link_clicked" | "manual";
+export type AutomationStatus = "draft" | "published" | "paused";
 
-export type WorkflowStatus = "draft" | "active" | "paused";
+export type AutomationReentryMode = "once" | "multiple";
 
-export interface WorkflowsTable {
+/** Node graph shape -- see lib/automationGraph.ts for the validating schema and
+ * docs/plan/automations_v2.md for why edges are pointers, not array order. */
+export interface AutomationGraph {
+  entry: string | null;
+  nodes: {
+    id: string;
+    type: string;
+    title?: string;
+    note?: string;
+    config: Record<string, unknown>;
+    next: string | null;
+  }[];
+}
+
+export interface AutomationsTable {
   id: Generated<number>;
   uuid: Generated<string>;
   name: string;
-  trigger_type: WorkflowTriggerType;
+  status: Generated<AutomationStatus>;
+  /** Registry key from automations/triggers.ts -- deliberately not a DB enum. */
+  trigger_type: string;
   trigger_config: Generated<Record<string, unknown>>;
-  steps: unknown[];
-  status: Generated<WorkflowStatus>;
-  reentry_allowed: Generated<boolean>;
+  graph: Generated<AutomationGraph>;
+  reentry_mode: Generated<AutomationReentryMode>;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
 }
 
-export type WorkflowEnrollmentStatus = "active" | "completed" | "cancelled";
+export type AutomationEnrollmentStatus = "active" | "completed" | "cancelled";
 
-export interface WorkflowEnrollmentsTable {
+export interface AutomationEnrollmentsTable {
   id: Generated<string>;
-  workflow_id: number;
+  automation_id: number;
   subscriber_id: number;
-  status: Generated<WorkflowEnrollmentStatus>;
-  current_step: Generated<number>;
+  status: Generated<AutomationEnrollmentStatus>;
+  current_node_id: string | null;
   next_run_at: Timestamp | null;
   context: Generated<Record<string, unknown>>;
+  started_at: Generated<Timestamp>;
+  completed_at: Timestamp | null;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
 }
 
-export interface WorkflowEventsTable {
+export interface AutomationEventsTable {
   id: Generated<string>;
   source: string;
   event_key: string;
   subscriber_id: number | null;
   payload: Generated<Record<string, unknown>>;
-  processed: Generated<boolean>;
   created_at: Generated<Timestamp>;
 }
 
@@ -267,8 +322,8 @@ export interface Database {
   campaign_views: CampaignViewsTable;
   links: LinksTable;
   link_clicks: LinkClicksTable;
-  workflows: WorkflowsTable;
-  workflow_enrollments: WorkflowEnrollmentsTable;
-  workflow_events: WorkflowEventsTable;
+  automations: AutomationsTable;
+  automation_enrollments: AutomationEnrollmentsTable;
+  automation_events: AutomationEventsTable;
   bounces: BouncesTable;
 }

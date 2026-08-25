@@ -1,5 +1,5 @@
 import { sql } from "kysely";
-import type PgBoss from "pg-boss";
+import type { PgBoss } from "pg-boss";
 import type { DB } from "../db/kysely.js";
 import type { Config } from "../config.js";
 import { mapLimit } from "../lib/concurrency.js";
@@ -164,6 +164,7 @@ export function registerCampaignDispatchWorker(
           status: result.ok ? "sent" : "failed",
           connection_id: result.connectionId,
           error: result.error,
+          message_id: result.messageId,
           sent_at: result.ok ? new Date() : null,
           attempts: sql`attempts + 1`,
         })

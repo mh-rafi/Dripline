@@ -23,3 +23,12 @@ selection in `send_email`).
 
 **Status: built and verified through completion** (multi-step delayed sequence, real
 Postgres).
+
+---
+
+**Superseded (2026-08-25) by [Automations v2](../automations_v2.md).** The flat step array,
+the `workflows*` tables and the JSON-textarea UI described above no longer exist: the
+migration `1755820800014_automations.sql` drops them and creates the `automations*` tables
+with a node graph, a trigger/action registry, and the canvas + sidebar builder. What
+carried over unchanged is the execution model — per-contact enrollment, one node per
+pg-boss job, delays as future `next_run_at`, and reuse of the connection layer for sends.

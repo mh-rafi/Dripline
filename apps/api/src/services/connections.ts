@@ -30,18 +30,33 @@ export interface SendResult {
   ok: boolean;
   connectionId: number | null;
   error: string | null;
+  /** The Message-ID actually used for this send (SMTP: nodemailer's
+   * generated/echoed value; SES: the bare id SES returns, not RFC 2822
+   * angle-bracket form). Null on a failed send. Stored on campaign_emails
+   * so a later bounce-mailbox scan can match a DSN back to this exact send --
+   * see docs/plan/mailbox_bounce_scanning.md. */
+  messageId: string | null;
+}
+
+export interface SendMailInput {
+  to: string;
+  from: string;
+  subject: string;
+  html: string;
+  headers?: Record<string, string>;
+  /** SMTP envelope MAIL FROM override, independent of the visible `from`
+   * header -- only meaningful for SmtpSender; SES has no equivalent here
+   * (its own bounce/complaint reporting goes through the webhook/SNS path
+   * instead). Set when this connection's bounce_config points at a separate
+   * mailbox, so DSNs actually route there instead of back to `from`. See
+   * docs/plan/mailbox_bounce_scanning.md §2.3. */
+  envelopeFrom?: string;
 }
 
 /** A normalized sending interface so additional provider types (Postmark,
  * SendGrid, Mailgun, ...) are new implementations, not a redesign. */
 export interface ConnectionSender {
-  send(input: {
-    to: string;
-    from: string;
-    subject: string;
-    html: string;
-    headers?: Record<string, string>;
-  }): Promise<void>;
+  send(input: SendMailInput): Promise<{ messageId: string | null }>;
   /** Lightweight credentials/reachability check used by the test-connection UI. */
   verify(): Promise<void>;
 }
@@ -66,20 +81,16 @@ function buildSmtpTransporter(cfg: SmtpConnectionConfig): Transporter {
 
 class SmtpSender implements ConnectionSender {
   constructor(private transporter: Transporter) {}
-  async send(input: {
-    to: string;
-    from: string;
-    subject: string;
-    html: string;
-    headers?: Record<string, string>;
-  }) {
-    await this.transporter.sendMail({
+  async send(input: SendMailInput) {
+    const info = await this.transporter.sendMail({
       from: input.from,
       to: input.to,
       subject: input.subject,
       html: input.html,
       headers: input.headers,
+      ...(input.envelopeFrom ? { envelope: { from: input.envelopeFrom, to: input.to } } : {}),
     });
+    return { messageId: info.messageId ?? null };
   }
   async verify() {
     await this.transporter.verify();
@@ -115,13 +126,7 @@ class SesSender implements ConnectionSender {
     return this.clientPromise;
   }
 
-  async send(input: {
-    to: string;
-    from: string;
-    subject: string;
-    html: string;
-    headers?: Record<string, string>;
-  }) {
+  async send(input: SendMailInput) {
     const client = await this.client();
     const { SendEmailCommand } = await import("@aws-sdk/client-sesv2");
     const headers = input.headers
@@ -138,7 +143,14 @@ class SesSender implements ConnectionSender {
         },
       },
     });
-    await client.send(cmd as never);
+    // SES's own MessageId is a bare id (not RFC 2822 angle-bracket form) --
+    // a bounce DSN's echoed Message-ID may not match it byte-for-byte
+    // depending on how the receiving MTA formats it. SES bounces are
+    // expected to be reported via the existing webhook/SNS path anyway
+    // (see docs/plan/mailbox_bounce_scanning.md), not mailbox scanning, so
+    // this is best-effort for SES specifically.
+    const result = (await client.send(cmd as never)) as { MessageId?: string };
+    return { messageId: result.MessageId ?? null };
   }
 
   async verify() {
@@ -207,6 +219,26 @@ function listUnsubscribeHeaders(
   };
 }
 
+/** SMTP envelope-from override for connections with a separate bounce
+ * mailbox -- see docs/plan/mailbox_bounce_scanning.md §2.3. Only meaningful
+ * when bounce scanning is enabled AND pointed at a mailbox other than this
+ * connection's own (use_sending_credentials: false). Uses `bounce_config.
+ email` -- a distinct field from `username` -- because an IMAP login isn't
+ * always a real email address (e.g. shared/cPanel Dovecot setups and older
+ * on-prem Exchange commonly authenticate with a bare local-part or SAM
+ * account name, not the full address); using `username` directly here would
+ * produce an invalid MAIL FROM on any provider where that's the case.
+ * Undefined (no override) leaves envelope-from at its default -- the
+ * visible `from` address -- which is correct both when bounce scanning is
+ * off and when it reuses the sending mailbox (a "use_sending_credentials"
+ * setup needs no redirection, that mailbox already receives its own
+ * bounces with no configuration). */
+function bounceEnvelopeFrom(connection: Connection): string | undefined {
+  const cfg = connection.bounce_config;
+  if (!cfg?.enabled || cfg.use_sending_credentials) return undefined;
+  return cfg.email || undefined;
+}
+
 // ---- result recording + auto-disable ---------------------------------------
 
 async function recordConnectionResult(
@@ -260,24 +292,25 @@ export async function sendThroughConnection(
 ): Promise<SendResult> {
   const acquired = await tryAcquireSendSlot(db, connection.id);
   if (!acquired) {
-    return { ok: false, connectionId: connection.id, error: "rate_limited" };
+    return { ok: false, connectionId: connection.id, error: "rate_limited", messageId: null };
   }
 
   const sender = getSenderFor(connection);
   try {
-    await sender.send({
+    const { messageId } = await sender.send({
       to: input.to,
       from: fromAddress(connection, input.fromOverride),
       subject: input.subject,
       html: input.html,
       headers: listUnsubscribeHeaders(connection, input.unsubscribeUrl),
+      envelopeFrom: bounceEnvelopeFrom(connection),
     });
     await recordConnectionResult(db, connection.id, true);
-    return { ok: true, connectionId: connection.id, error: null };
+    return { ok: true, connectionId: connection.id, error: null, messageId };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     await recordConnectionResult(db, connection.id, false);
-    return { ok: false, connectionId: connection.id, error: message };
+    return { ok: false, connectionId: connection.id, error: message, messageId: null };
   }
 }
 
@@ -291,7 +324,12 @@ export async function sendWithChain(
   input: SendInput,
 ): Promise<SendResult> {
   if (connections.length === 0) {
-    return { ok: false, connectionId: null, error: "no sending connection configured" };
+    return {
+      ok: false,
+      connectionId: null,
+      error: "no sending connection configured",
+      messageId: null,
+    };
   }
 
   let lastError = "all connections failed";
@@ -316,7 +354,12 @@ export async function sendWithChain(
     onlyRateLimited = false;
     continue; // real error -- fail over to the next in the chain.
   }
-  return { ok: false, connectionId: null, error: onlyRateLimited ? "rate_limited" : lastError };
+  return {
+    ok: false,
+    connectionId: null,
+    error: onlyRateLimited ? "rate_limited" : lastError,
+    messageId: null,
+  };
 }
 
 // ---- chain resolution --------------------------------------------------------
@@ -334,13 +377,14 @@ export async function getConnectionChain(db: DB, campaignId: number): Promise<Co
   return rows as unknown as Connection[];
 }
 
-/** Connections for a workflow's send_email step: the primary `connection_id`
- * plus any explicit ordered `fallback_connection_ids`. Deliberately has no
- * implicit fallback to "any enabled connection" -- picking one on the
- * workflow author's behalf is exactly the cross-domain-mixing risk this
- * whole connection model exists to prevent (see docs/prd/PRD.md §6.3). If a
- * send_email step doesn't name a connection, it sends nothing until it does. */
-export async function getWorkflowConnectionChain(
+/** Connections for a send that names them explicitly (an automation's
+ * send-email node): the primary `connection_id` plus any ordered
+ * `fallback_connection_ids`. Deliberately has no implicit fallback to "any
+ * enabled connection" -- picking one on the author's behalf is exactly the
+ * cross-domain-mixing risk this whole connection model exists to prevent
+ * (see docs/prd/PRD.md §6.3). A node that names no connection sends nothing
+ * until it does. */
+export async function getExplicitConnectionChain(
   db: DB,
   connectionId: number | undefined,
   fallbackIds: number[] | undefined,

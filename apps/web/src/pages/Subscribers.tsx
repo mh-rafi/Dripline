@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../lib/api.js";
 import type { List, Subscriber } from "../lib/types.js";
 import Badge from "../components/Badge.js";
@@ -38,19 +38,59 @@ import {
   RadioGroup,
   RadioGroupItem,
   RadioGroupLabel,
+  Dropdown,
+  DropdownTrigger,
+  DropdownContent,
+  DropdownSeparator,
   toast,
 } from "../components/ui/index.js";
 
 const BATCH_SIZE = 300;
+
+type ListMembershipStatus = "unconfirmed" | "confirmed" | "unsubscribed";
+
+const LIST_STATUS_OPTIONS: { value: ListMembershipStatus; label: string }[] = [
+  { value: "confirmed", label: "Confirmed" },
+  { value: "unconfirmed", label: "Unconfirmed" },
+  { value: "unsubscribed", label: "Unsubscribed" },
+];
 
 interface SubscriberListResponse {
   subscribers: Subscriber[];
   total: number;
 }
 
-type BulkSelector = { ids: number[] } | { query: { q?: string }; all: true };
+type BulkSelector =
+  | { ids: number[] }
+  | {
+      query: {
+        q?: string;
+        list_ids?: number[];
+        list_statuses?: ListMembershipStatus[];
+        blocklisted?: boolean;
+      };
+      all: true;
+    };
+
+function parseCommaInts(value: string | null): number[] {
+  return value ? value.split(",").map(Number) : [];
+}
+
+function parseCommaList<T extends string>(value: string | null): T[] {
+  return value ? (value.split(",") as T[]) : [];
+}
 
 export default function Subscribers() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  // Raw param strings, not the parsed arrays below -- stable across renders
+  // unless the URL actually changes, so they're safe to use as effect/memo
+  // dependencies (the parsed arrays are fresh instances every render).
+  const listIdsParam = searchParams.get("list_ids");
+  const listStatusesParam = searchParams.get("list_statuses");
+  const blocklistedParam = searchParams.get("blocklisted");
+  const filterListIds = parseCommaInts(listIdsParam);
+  const filterListStatuses = parseCommaList<ListMembershipStatus>(listStatusesParam);
+  const filterBlocklisted = blocklistedParam === "true";
   const [subscribers, setSubscribers] = useState<Subscriber[]>([]);
   const [lists, setLists] = useState<List[]>([]);
   const [q, setQ] = useState("");
@@ -70,9 +110,14 @@ export default function Subscribers() {
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [showManageLists, setShowManageLists] = useState(false);
+  const [listFilterSearch, setListFilterSearch] = useState("");
 
   const load = useCallback(() => {
-    const query = q ? `&q=${encodeURIComponent(q)}` : "";
+    const query =
+      (q ? `&q=${encodeURIComponent(q)}` : "") +
+      (listIdsParam ? `&list_ids=${encodeURIComponent(listIdsParam)}` : "") +
+      (listStatusesParam ? `&list_statuses=${encodeURIComponent(listStatusesParam)}` : "") +
+      (blocklistedParam ? `&blocklisted=${encodeURIComponent(blocklistedParam)}` : "");
     api
       .get<SubscriberListResponse>(
         `/subscribers?limit=${pageSize}&offset=${(page - 1) * pageSize}${query}`,
@@ -81,7 +126,7 @@ export default function Subscribers() {
         setSubscribers(res.subscribers);
         setTotal(res.total);
       });
-  }, [q, page, pageSize]);
+  }, [q, page, pageSize, listIdsParam, listStatusesParam, blocklistedParam]);
 
   useEffect(load, [load]);
 
@@ -89,12 +134,45 @@ export default function Subscribers() {
     api.get<List[]>("/lists").then(setLists);
   }, []);
 
-  // Reset to page 1 + clear selection when search changes.
+  // Reset to page 1 + clear selection when search or filters change.
   useEffect(() => {
     setPage(1);
     setSelectedIds(new Set());
     setSelectAllMatching(false);
-  }, [q]);
+  }, [q, listIdsParam, listStatusesParam, blocklistedParam]);
+
+  function toggleListFilter(id: number) {
+    const next = filterListIds.includes(id)
+      ? filterListIds.filter((x) => x !== id)
+      : [...filterListIds, id];
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      if (next.length > 0) params.set("list_ids", next.join(","));
+      else params.delete("list_ids");
+      return params;
+    });
+  }
+
+  function toggleListStatusFilter(value: ListMembershipStatus) {
+    const next = filterListStatuses.includes(value)
+      ? filterListStatuses.filter((x) => x !== value)
+      : [...filterListStatuses, value];
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      if (next.length > 0) params.set("list_statuses", next.join(","));
+      else params.delete("list_statuses");
+      return params;
+    });
+  }
+
+  function toggleBlocklistedFilter() {
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      if (filterBlocklisted) params.delete("blocklisted");
+      else params.set("blocklisted", "true");
+      return params;
+    });
+  }
 
   const selectedCount = selectAllMatching ? total : selectedIds.size;
   const pageIds = subscribers.map((s) => s.id);
@@ -149,7 +227,15 @@ export default function Subscribers() {
 
   function buildSelector(): BulkSelector {
     if (selectAllMatching) {
-      return { query: { q: q || undefined }, all: true };
+      return {
+        query: {
+          q: q || undefined,
+          list_ids: filterListIds.length > 0 ? filterListIds : undefined,
+          list_statuses: filterListStatuses.length > 0 ? filterListStatuses : undefined,
+          blocklisted: filterBlocklisted || undefined,
+        },
+        all: true,
+      };
     }
     return { ids: [...selectedIds] };
   }
@@ -221,11 +307,13 @@ export default function Subscribers() {
   const [mlAction, setMlAction] = useState<"add" | "remove">("add");
   const [mlListIds, setMlListIds] = useState<number[]>([]);
   const [mlStatus, setMlStatus] = useState<"unconfirmed" | "confirmed">("confirmed");
+  const [mlTriggerAutomations, setMlTriggerAutomations] = useState(false);
 
   function openManageLists() {
     setMlAction("add");
     setMlListIds([]);
     setMlStatus("confirmed");
+    setMlTriggerAutomations(false);
     setShowManageLists(true);
   }
 
@@ -241,6 +329,7 @@ export default function Subscribers() {
           list_ids: mlListIds,
           action: mlAction,
           status: mlAction === "add" ? mlStatus : undefined,
+          trigger_automations: mlTriggerAutomations,
         });
         toast.success(`Updated ${res.affected} list memberships`);
       } else {
@@ -253,6 +342,7 @@ export default function Subscribers() {
             list_ids: mlListIds,
             action: mlAction,
             status: mlAction === "add" ? mlStatus : undefined,
+            trigger_automations: mlTriggerAutomations,
           });
           affected += res.affected;
           setProgress({ done: Math.min(i + BATCH_SIZE, ids.length), total: ids.length });
@@ -435,8 +525,88 @@ export default function Subscribers() {
         </BlockLayout>
       )}
 
-      {/* Search */}
-      <div className="mb-4">
+      {/* Filters */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <Dropdown>
+          <DropdownTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              className={filterListIds.length > 0 ? "border-primary text-primary" : ""}
+            >
+              Filtered by Lists{filterListIds.length > 0 ? ` (${filterListIds.length})` : ""}
+            </Button>
+          </DropdownTrigger>
+          <DropdownContent align="start" size="md" className="p-2">
+            <Input
+              placeholder="Search…"
+              value={listFilterSearch}
+              onChange={(e) => setListFilterSearch(e.target.value)}
+              className="mb-2"
+            />
+            <div className="max-h-64 space-y-0.5 overflow-y-auto">
+              {lists
+                .filter((l) => l.name.toLowerCase().includes(listFilterSearch.toLowerCase()))
+                .map((l) => (
+                  <label
+                    key={l.id}
+                    className="hover:bg-accent flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm"
+                  >
+                    <Checkbox
+                      checked={filterListIds.includes(l.id)}
+                      onCheckedChange={() => toggleListFilter(l.id)}
+                    />
+                    {l.name}
+                  </label>
+                ))}
+              {lists.filter((l) => l.name.toLowerCase().includes(listFilterSearch.toLowerCase()))
+                .length === 0 && (
+                <div className="text-muted-foreground px-2 py-1.5 text-sm">No lists found</div>
+              )}
+            </div>
+          </DropdownContent>
+        </Dropdown>
+
+        <Dropdown>
+          <DropdownTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              className={
+                filterListStatuses.length > 0 || filterBlocklisted
+                  ? "border-primary text-primary"
+                  : ""
+              }
+            >
+              Filtered by Statuses
+              {filterListStatuses.length + (filterBlocklisted ? 1 : 0) > 0
+                ? ` (${filterListStatuses.length + (filterBlocklisted ? 1 : 0)})`
+                : ""}
+            </Button>
+          </DropdownTrigger>
+          <DropdownContent align="start" size="md" className="p-2">
+            <div className="space-y-0.5">
+              {LIST_STATUS_OPTIONS.map((opt) => (
+                <label
+                  key={opt.value}
+                  className="hover:bg-accent flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm"
+                >
+                  <Checkbox
+                    checked={filterListStatuses.includes(opt.value)}
+                    onCheckedChange={() => toggleListStatusFilter(opt.value)}
+                  />
+                  {opt.label}
+                </label>
+              ))}
+              <DropdownSeparator />
+              <label className="hover:bg-accent flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm">
+                <Checkbox checked={filterBlocklisted} onCheckedChange={toggleBlocklistedFilter} />
+                Blocklisted
+              </label>
+            </div>
+          </DropdownContent>
+        </Dropdown>
+
         <Input
           placeholder="Search by email or name…"
           value={q}
@@ -660,6 +830,21 @@ export default function Subscribers() {
                 </RadioGroup>
               </div>
             )}
+
+            <div className="flex items-start gap-2">
+              <Checkbox
+                id="ml-trigger-automations"
+                checked={mlTriggerAutomations}
+                onCheckedChange={(v) => setMlTriggerAutomations(v === true)}
+              />
+              <div>
+                <CheckboxLabel htmlFor="ml-trigger-automations">Run automations</CheckboxLabel>
+                <p className="text-muted-foreground text-xs">
+                  Off by default — turning it on enrols every affected contact in automations
+                  triggered by this list change.
+                </p>
+              </div>
+            </div>
 
             {progress && (
               <p className="text-muted-foreground text-sm">

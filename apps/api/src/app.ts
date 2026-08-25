@@ -5,7 +5,7 @@ import { ZodError } from "zod";
 import type { Config } from "./config.js";
 import type { DB } from "./db/kysely.js";
 import authPlugin from "./auth/plugin.js";
-import { HttpError } from "./lib/errors.js";
+import { BadRequestError, HttpError } from "./lib/errors.js";
 
 import authRoutes from "./routes/auth.js";
 import subscriberRoutes from "./routes/subscribers.js";
@@ -13,8 +13,7 @@ import listRoutes from "./routes/lists.js";
 import templateRoutes from "./routes/templates.js";
 import campaignRoutes from "./routes/campaigns.js";
 import connectionRoutes from "./routes/connections.js";
-import workflowRoutes from "./routes/workflows.js";
-import webhookRoutes from "./routes/webhooks.js";
+import automationRoutes from "./routes/automations.js";
 import bounceRoutes from "./routes/bounces.js";
 import trackingRoutes from "./routes/tracking.js";
 
@@ -31,8 +30,10 @@ export function buildApp(pool: pg.Pool, db: DB, config: Config): FastifyInstance
     if (body === "") return done(null, {});
     try {
       done(null, JSON.parse(body as string));
-    } catch (err) {
-      done(err as Error, undefined);
+    } catch {
+      // A bare SyntaxError carries no statusCode, so the error handler below
+      // would report malformed JSON as a 500 rather than a 400.
+      done(new BadRequestError("invalid JSON body"), undefined);
     }
   });
 
@@ -47,8 +48,7 @@ export function buildApp(pool: pg.Pool, db: DB, config: Config): FastifyInstance
   app.register(templateRoutes, { db });
   app.register(connectionRoutes, { db });
   app.register(campaignRoutes, { db, config });
-  app.register(workflowRoutes, { db });
-  app.register(webhookRoutes, { db });
+  app.register(automationRoutes, { db });
   app.register(bounceRoutes, { db });
   app.register(trackingRoutes, { db, config });
 

@@ -1,8 +1,45 @@
 import { sql, type RawBuilder } from "kysely";
 
+export type ListMembershipStatus = "unconfirmed" | "confirmed" | "unsubscribed";
+
 export interface SubscriberFilter {
   q?: string;
-  list_id?: number;
+  // OR'd together: member of any of these lists. Paired with list_statuses
+  // (when both given) as a single subscriber_lists condition -- list A +
+  // status "unsubscribed" means "unsubscribed from A", not "unsubscribed
+  // from *some* list while merely a member of A".
+  list_ids?: number[];
+  // OR'd together, scoped to list_ids when given, otherwise checked across
+  // any list membership.
+  list_statuses?: ListMembershipStatus[];
+  // Global account status (subscribers.status), independent of any
+  // particular list. OR'd against the list/status condition above rather
+  // than AND'd -- "blocklisted" is a different axis (an account-wide state,
+  // not a per-list one) and blocklisting already unsubscribes every
+  // membership, so AND-ing it with a list filter would just hide blocklisted
+  // subscribers behind whatever list condition was also selected.
+  blocklisted?: boolean;
+}
+
+function listCondition(list_ids?: number[], list_statuses?: ListMembershipStatus[]) {
+  const hasIds = !!list_ids?.length;
+  const hasStatuses = !!list_statuses?.length;
+  if (!hasIds && !hasStatuses) return undefined;
+  const clauses: RawBuilder<boolean>[] = [];
+  if (hasIds) clauses.push(sql<boolean>`list_id = ANY(${list_ids}::int[])`);
+  if (hasStatuses) clauses.push(sql<boolean>`status = ANY(${list_statuses}::text[])`);
+  return sql<boolean>`id IN (SELECT subscriber_id FROM subscriber_lists WHERE ${sql.join(clauses, sql` AND `)})`;
+}
+
+/** Combines the list/status condition and the blocklisted condition per the
+ * OR semantics documented on SubscriberFilter.blocklisted -- shared between
+ * the plain listing filter and the bulk-action selector so they can't
+ * drift apart. */
+function listOrBlocklistCondition(filter: SubscriberFilter): RawBuilder<boolean> | undefined {
+  const membership = listCondition(filter.list_ids, filter.list_statuses);
+  const blocklisted = filter.blocklisted ? sql<boolean>`status = 'blocklisted'` : undefined;
+  if (membership && blocklisted) return sql<boolean>`(${membership} OR ${blocklisted})`;
+  return membership ?? blocklisted;
 }
 
 /**
@@ -28,17 +65,14 @@ export function selectorWhereClause(
     return sql<boolean>`subscribers.id = ANY(${selector.ids}::int[])`;
   }
 
-  const { q, list_id } = selector.query;
+  const { q } = selector.query;
   const conditions: RawBuilder<boolean>[] = [];
   if (q) {
     const pattern = `%${q}%`;
     conditions.push(sql<boolean>`(email ilike ${pattern} OR name ilike ${pattern})`);
   }
-  if (list_id) {
-    conditions.push(
-      sql<boolean>`id IN (SELECT subscriber_id FROM subscriber_lists WHERE list_id = ${list_id})`,
-    );
-  }
+  const listOrBlocklist = listOrBlocklistCondition(selector.query);
+  if (listOrBlocklist) conditions.push(listOrBlocklist);
 
   if (conditions.length === 0) {
     // No filter at all -- "select all matching" with an empty query means

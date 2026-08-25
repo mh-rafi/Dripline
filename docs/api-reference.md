@@ -32,12 +32,12 @@ Request/response bodies are JSON. Validation errors return `400` with
 | POST   | `/subscribers/:id/unblocklist`            | Reverses blocklisting; restores each list membership's status to whatever it was right before blocklisting force-unsubscribed it (tracked via `subscriber_lists.pre_blocklist_status`) -- a membership already unsubscribed before blocklisting stays unsubscribed                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | PUT    | `/subscribers/:id/lists/:listId`          | `{ status? }` add/update list membership                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | DELETE | `/subscribers/:id/lists/:listId`          | Marks membership unsubscribed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| PUT    | `/subscribers/:id/tags/:tag`              | Adds a tag (also fires `tag_applied` workflow triggers)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| PUT    | `/subscribers/:id/tags/:tag`              | Adds a tag                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | DELETE | `/subscribers/:id/tags/:tag`              | Removes a tag                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | POST   | `/subscribers/import`                     | `{ mode?, status?, list_ids?, overwrite_user_info?, overwrite_subscription_status?, subscribers: [{ email, name?, attribs? }] }` bulk upsert. `mode` is `subscribe \| blocklist` (default `subscribe`); in blocklist mode `list_ids` is ignored. `status` (`unconfirmed \| confirmed`, default `confirmed`) is the list-membership status applied to every list in `list_ids`. The two `overwrite_*` flags (both default `false`) control whether an existing subscriber's/membership's data gets clobbered by the import vs. left alone. The admin UI's import page does CSV parsing and column→field mapping client-side and posts the resulting `subscribers` array in batches -- there's no server-side CSV/file upload endpoint. |
 | POST   | `/subscribers/bulk/blocklist`             | `{ ids: number[] } \| { query: { q?, list_id? }, all: true }` — bulk blocklist. Returns `{ affected }`. Single SQL statement, not a per-row loop. `pre_blocklist_status` is stashed so individual `unblocklist` can still restore later.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | POST   | `/subscribers/bulk/delete`                | Same selector shape — bulk hard delete (cascades to subscriber_lists, campaign_emails, bounces, etc.). Returns `{ affected }`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| POST   | `/subscribers/bulk/lists`                 | `BulkSelector & { list_ids: number[], action: "add" \| "remove", status?: "unconfirmed" \| "confirmed" }` — bulk list management. `status` required when `action === "add"`. "Remove" = soft-unsubscribe (same as single-subscriber `removeFromList`). Does NOT fire `list_joined` workflow triggers. Returns `{ affected }`.                                                                                                                                                                                                                                                                                                                                                                                                         |
+| POST   | `/subscribers/bulk/lists`                 | `BulkSelector & { list_ids: number[], action: "add" \| "remove", status?: "unconfirmed" \| "confirmed", trigger_automations?: boolean }` — bulk list management. `status` required when `action === "add"`. "Remove" = soft-unsubscribe (same as single-subscriber `removeFromList`). `trigger_automations` (default `false`) decides whether the affected contacts are enrolled in `list_applied`/`list_removed` automations — off by default so one bulk change can't enrol thousands of people by accident. Returns `{ affected }`.                                                                                                                                                                                                |
 | POST   | `/subscribers/export`                     | `BulkSelector` — returns `text/csv` with `Content-Disposition: attachment`. Columns: `email,name,status,attribs,lists` (attribs as JSON string, lists as `name:status` semicolon-separated). Export re-imports cleanly through the CSV import flow.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 
 ## Lists / Templates / Connections
@@ -57,6 +57,43 @@ domains/identities. No `mailto:` form is offered (would need a mailbox
 that actually processes unsubscribe requests, which this project doesn't
 have).
 
+### Bounce mailbox scanning
+
+Per connection, optional IMAP mailbox scanning for bounces (a second,
+independent ingestion path alongside the webhook-based `POST /bounces` --
+see `docs/plan/mailbox_bounce_scanning.md`). `connections.bounce_config`:
+
+```ts
+{
+  enabled: boolean;
+  host: string; // IMAP host -- always required when enabled
+  port: number; // IMAP host/port are never derived from the
+  tls: boolean; // sending config, even with use_sending_credentials
+  username: string; // IMAP login -- required unless use_sending_credentials
+  password: string; // required unless use_sending_credentials
+  email: string; // address bounces route to -- distinct from
+  // username (an IMAP login isn't always an email
+  // address); required unless use_sending_credentials
+  use_sending_credentials: boolean; // reuse this connection's own SMTP login (smtp type only)
+  folder: string; // default "INBOX"
+  max_age_days: number; // default 7 -- hard bound on every scan's IMAP SEARCH
+  max_messages_per_scan: number; // default 200
+}
+```
+
+`bounce_config.password` is masked the same way `config.password` is.
+Runs every 5 minutes for every `enabled` connection with `bounce_config.
+enabled: true`; never marks messages read, moves, or deletes anything --
+tracks progress via `connections.bounce_last_uid`/`bounce_last_uidvalidity`
+(not user-editable). `POST /connections/:id/bounce-test` and
+`POST /connections/bounce-test` (unsaved draft) check reachability only,
+same as the existing `/test` endpoints for sending config.
+
+A separate bounce mailbox (`use_sending_credentials: false`) also makes
+outgoing sends through that connection carry an envelope-from (Return-Path)
+override pointing at `bounce_config.email`, so DSNs actually route there --
+not guaranteed to be honored by every SMTP provider.
+
 `POST /templates/preview` -- `{ body }` → `{ html }`. Renders the given
 (possibly unsaved) template body with sample content standing in for
 `{{ Body }}`, so a template can be previewed on its own without a real
@@ -73,6 +110,7 @@ campaign.
 | PUT    | `/campaigns/:id/lists`       | Replace attached list IDs                                                                                                                                                                                                                                                                                                                                             |
 | PUT    | `/campaigns/:id/connections` | Replace the ordered connection chain (array order = priority, first is primary)                                                                                                                                                                                                                                                                                       |
 | DELETE | `/campaigns/:id`             | Only while draft/scheduled                                                                                                                                                                                                                                                                                                                                            |
+| POST   | `/campaigns/:id/duplicate`   | Creates a new draft with the same content, lists, and connection chain. Never copies `send_at`, `status`, or send history/analytics -- the copy always starts as a fresh, unscheduled draft.                                                                                                                                                                          |
 | POST   | `/campaigns/:id/start`       | draft/scheduled/paused → running. Materializes `campaign_emails` rows.                                                                                                                                                                                                                                                                                                |
 | POST   | `/campaigns/:id/pause`       | running → paused                                                                                                                                                                                                                                                                                                                                                      |
 | POST   | `/campaigns/:id/cancel`      | running/paused/draft → cancelled                                                                                                                                                                                                                                                                                                                                      |
@@ -81,35 +119,51 @@ campaign.
 | GET    | `/campaigns/:id/progress`    | `{ pending, queued, sent, failed, skipped, total }` -- always live, never cached                                                                                                                                                                                                                                                                                      |
 | GET    | `/campaigns/:id/analytics`   | `{ opens, unique_opens, clicks, unique_clicks }`                                                                                                                                                                                                                                                                                                                      |
 
-## Workflows (automations)
+## Automations
 
-| Method | Path                            | Notes                                                             |
-| ------ | ------------------------------- | ----------------------------------------------------------------- |
-| GET    | `/workflows` / `/workflows/:id` | List / detail (detail includes enrollment counts)                 |
-| POST   | `/workflows`                    | `{ name, trigger_type, trigger_config, steps, reentry_allowed? }` |
-| PATCH  | `/workflows/:id`                | Also used to set `status: "active" \| "paused" \| "draft"`        |
-| DELETE | `/workflows/:id`                |                                                                   |
-| POST   | `/workflows/:id/enroll`         | `{ subscriber_id }` manual enrollment                             |
-| GET    | `/workflows/:id/enrollments`    | Recent enrollments + current step                                 |
+Node-graph automations -- see [plan/automations_v2.md](plan/automations_v2.md) for the
+model. `graph` is `{ entry: <node id|null>, nodes: [{ id, type, title?, note?, config, next }] }`
+with pointer edges, not array order.
 
-Step types (see `apps/api/src/lib/workflowSteps.ts` for the exact schema):
-`delay`, `send_email`, `add_tag`, `remove_tag`, `add_list`, `remove_list`,
-`condition`, `webhook_out`.
+| Method | Path                           | Notes                                                                                                                                                                                                                                                             |
+| ------ | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/automations`                 | List, each with `enrollment_counts`                                                                                                                                                                                                                               |
+| GET    | `/automations/registry`        | `{ triggers, actions }` -- the trigger/action catalogue this build supports (`type`, `label`, `description`, `group`)                                                                                                                                             |
+| GET    | `/automations/:id`             | Detail, including `enrollment_counts`                                                                                                                                                                                                                             |
+| POST   | `/automations`                 | `{ name, trigger_type, trigger_config? }`. Trigger defaults are filled server-side (an incoming-webhook automation gets its secret `key` here)                                                                                                                    |
+| PATCH  | `/automations/:id`             | `{ name?, trigger_config?, graph?, status?, reentry_mode? }`. A saved graph is checked structurally (unique ids, edges pointing at real nodes); per-node config is only validated when `status: "published"`, so half-configured steps can be saved while editing |
+| DELETE | `/automations/:id`             | Also removes the enrollments                                                                                                                                                                                                                                      |
+| POST   | `/automations/:id/enroll`      | `{ subscriber_id }` manual enrollment (respects `reentry_mode` and publish state)                                                                                                                                                                                 |
+| GET    | `/automations/:id/enrollments` | Recent enrollments with `current_node_id`, `next_run_at`, contact email                                                                                                                                                                                           |
+
+Triggers: `list_applied`, `list_removed`, `contact_created`, `webhook_incoming`.
+Actions: `wait`, `send_custom_email`, `apply_list`, `remove_list`.
+Both are registries (`apps/api/src/automations/`) -- adding one is a single entry there
+plus its UI counterpart in `apps/web/src/automations/`.
+
+`status` is `draft | published | paused`. Only `published` automations enrol contacts;
+pausing holds contacts in place rather than dropping them.
 
 ## Event ingestion
 
-| Method | Path                  | Notes                                                                                                                                       |
-| ------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| POST   | `/webhooks/:eventKey` | `{ email? \| subscriber_id?, ...payload }`. Matches active `webhook`-trigger workflows whose `trigger_config.event_key` equals `:eventKey`. |
-| POST   | `/bounces`            | `{ email, campaign_uuid?, type: "hard"\|"soft"\|"complaint", source?, meta? }`. Auto-blocklists per threshold.                              |
+| Method | Path                      | Notes                                                                                                                                                                                                                                             |
+| ------ | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/automations/hooks/:key` | **Unauthenticated** -- the per-automation `key` is the credential. `{ email? \| subscriber_id?, name?, attribs?, ...payload }`. Creates the contact if `email` is unknown, then enrols them in the `webhook_incoming` automation owning that key. |
+| POST   | `/bounces`                | `{ email, campaign_uuid?, type: "hard"\|"soft"\|"complaint", source?, meta? }`. Auto-blocklists per threshold.                                                                                                                                    |
 
 ## Tracking (public, unauthenticated, HMAC-signed)
 
 These URLs are generated automatically inside sent campaign emails -- you
 should not need to construct them by hand.
 
-| Method   | Path                                                   |
-| -------- | ------------------------------------------------------ |
-| GET      | `/track/open/:campaignUuid/:subscriberUuid?sig=`       |
-| GET      | `/track/click/:campaignUuid/:subscriberUuid?url=&sig=` |
-| GET/POST | `/unsubscribe/:campaignUuid/:subscriberUuid?sig=`      |
+| Method   | Path                                                           |
+| -------- | -------------------------------------------------------------- |
+| GET      | `/track/open/:campaignUuid/:subscriberUuid?sig=`               |
+| GET      | `/track/click/:campaignUuid/:subscriberUuid?url=&sig=`         |
+| GET/POST | `/unsubscribe/:campaignUuid/:subscriberUuid?sig=`              |
+| GET/POST | `/unsubscribe/automation/:automationUuid/:subscriberUuid?sig=` |
+
+The automation variant is the one-click (List-Unsubscribe) target for emails sent by an
+automation. An automation isn't list-scoped the way a campaign is, so one-click there
+unsubscribes the contact from every list; the visible link in the body still goes to the
+per-list preference page.

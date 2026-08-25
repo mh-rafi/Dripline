@@ -3,7 +3,9 @@ import { config as loadDotenv } from "dotenv";
 // Loads apps/api/.env (if present) into process.env. Safe to call more than
 // once; a no-op in production where real env vars are set directly (Docker,
 // systemd, etc). Runs at import time so it's in effect before loadConfig().
-loadDotenv();
+// quiet: dotenv 17 otherwise prints a banner to stdout on every start, which
+// is noise in the app's own (JSON) logs.
+loadDotenv({ quiet: true });
 
 export interface Config {
   port: number;

@@ -4,9 +4,16 @@
 
 Tasks:
 
-- ~~Bounce handling~~ -- done: webhook ingestion + threshold-based auto-blocklisting.
-  Mailbox-scan-based bounce detection (IMAP/POP polling) is still open for providers
-  without bounce webhooks.
+- ~~Bounce handling~~ -- done: webhook ingestion + threshold-based auto-blocklisting, plus
+  per-connection IMAP mailbox-scan detection for providers without bounce webhooks -- see
+  [../mailbox_bounce_scanning.md](../mailbox_bounce_scanning.md) (built; not yet verified
+  against a real mailbox or clicked through in the browser). Designed specifically to avoid
+  the crash listmonk's own POP-based scanner hit against a large mailbox: per-connection UID
+  cursor + a hard `max_age_days`/`max_messages_per_scan` bound, IMAP-only (no POP), never
+  marks mail read/moved/deleted. Also supports a genuinely separate bounce mailbox via an
+  envelope-from (Return-Path) override, not a custom header.
+  We'll implement webhook handler for AWS SES, Resend and others later.
+
 - ~~CSV subscriber import~~ -- done (Phase 1). Double opt-in confirm flow is still open.
 - Campaign analytics polish, public archive pages.
 - listmonk → Dripline import tool -- script written, never run against a real listmonk

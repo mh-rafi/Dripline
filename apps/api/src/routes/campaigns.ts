@@ -5,6 +5,7 @@ import type { Config } from "../config.js";
 import { NotFoundError } from "../lib/errors.js";
 import {
   cancelCampaign,
+  duplicateCampaign,
   getCampaignOrThrow,
   getCampaignProgress,
   pauseCampaign,
@@ -223,6 +224,13 @@ export default async function campaignRoutes(
       .where("status", "in", ["draft", "scheduled"])
       .execute();
     return { ok: true };
+  });
+
+  app.post("/api/v1/campaigns/:id/duplicate", async (req, reply) => {
+    const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
+    const copy = await duplicateCampaign(db, id);
+    reply.code(201);
+    return copy;
   });
 
   app.post("/api/v1/campaigns/:id/start", async (req) => {

@@ -22,12 +22,12 @@ account -- the web UI's login screen has a "first-time setup" link for this.
 
 Set these in `apps/api/.env` (see `apps/api/.env.example`):
 
-| Variable          | Required          | Purpose                                                                      |
-| ----------------- | ----------------- | ---------------------------------------------------------------------------- |
-| `DATABASE_URL`    | yes               | Postgres connection string                                                   |
-| `PORT`            | no (default 3000) | API port                                                                     |
-| `JWT_SECRET`      | yes in production | Signs admin session tokens -- must be a long random value                    |
-| `TRACKING_SECRET` | yes in production | Signs open/click/unsubscribe tracking links                                  |
+| Variable          | Required          | Purpose                                                                                                                                                                                                                                                                              |
+| ----------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `DATABASE_URL`    | yes               | Postgres connection string                                                                                                                                                                                                                                                           |
+| `PORT`            | no (default 3000) | API port                                                                                                                                                                                                                                                                             |
+| `JWT_SECRET`      | yes in production | Signs admin session tokens -- must be a long random value                                                                                                                                                                                                                            |
+| `TRACKING_SECRET` | yes in production | Signs open/click/unsubscribe tracking links                                                                                                                                                                                                                                          |
 | `APP_URL`         | yes               | Public base URL, used to build tracking/unsubscribe links embedded in emails (must be the origin serving the web app, not the API -- the unsubscribe page is a web app route; in dev this is the Vite dev server's origin, `http://localhost:5173`, which proxies `/api` to the API) |
 
 The insecure defaults baked into `config.ts` are fine for local development
@@ -35,7 +35,7 @@ only -- always set real secrets before exposing an instance to the internet.
 
 ## Without Docker
 
-Requirements: Node.js 20+, Postgres 14+.
+Requirements: Node.js 22+ (24 LTS recommended -- what the Docker images use), Postgres 14+.
 
 ```bash
 npm install
@@ -53,6 +53,18 @@ npm run dev
 In production, build both and run the API's compiled output behind your
 reverse proxy of choice, serving `apps/web/dist` as static files (or via the
 same proxy) in front of it.
+
+## Upgrading an existing install
+
+Always **stop the API before running `npm run migrate`**, then start it again.
+That has always been good practice; as of the pg-boss 12 upgrade it is
+required, because one migration recreates pg-boss's own schema and dropping it
+under a live pg-boss connection errors that process.
+
+Nothing durable lives in the job queue -- the scan jobs are rebuilt from your
+own tables on the next tick (a running campaign re-queues its next dispatch
+batch, a contact mid-automation re-queues from `next_run_at`), so no campaign
+or automation loses its place across the upgrade.
 
 ## Sending providers
 
