@@ -69,7 +69,10 @@ jobs:
       - name: Export digest
         run: |
           mkdir -p /tmp/digests
-          touch "/tmp/digests/${{ steps.build.outputs.digest }}"
+          # The filename is the bare hex: upload-artifact rejects colons, and
+          # the merge job re-adds the "sha256:" prefix when it reads these back.
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
         shell: bash
 
       - uses: actions/upload-artifact@v4
