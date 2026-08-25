@@ -92,12 +92,14 @@ const sendCustomEmail = defineAction({
     subject: z.string().min(1),
     // Same model as campaigns: `body` holds the source for its content type
     // and is converted at send time (see jobs/campaignDispatch.ts).
-    body: z.string().default(""),
+    body: z.string().min(1),
     body_source: z.string().nullable().optional(),
     content_type: z.enum(["richtext", "html", "markdown", "plain"]).default("richtext"),
-    /** Explicit, like the campaign model -- there is deliberately no implicit
-     * "any enabled connection" fallback (see services/connections.ts). */
-    connection_id: z.number().int().optional(),
+    /** Required, and explicit: there is deliberately no implicit "any enabled
+     * connection" fallback (see services/connections.ts), so a node without one
+     * could be published and would then silently drop every email it tried to
+     * send. Publishing is refused instead. */
+    connection_id: z.number().int(),
     fallback_connection_ids: z.array(z.number().int()).default([]),
   }),
   execute: async ({ db, config, automation, subscriber, settings }) => {

@@ -14,8 +14,14 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Plus, Zap, type LucideIcon } from "lucide-react";
+import { Plus, TriangleAlert, Zap, type LucideIcon } from "lucide-react";
 import { cn } from "../lib/utils.js";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "../components/ui/index.js";
 import { useTheme } from "../lib/theme.js";
 import { useAutomationData } from "./context.js";
 import { getActionUi } from "./actions.js";
@@ -32,6 +38,8 @@ interface BlockData extends Record<string, unknown> {
   tone: "trigger" | "email" | "plain";
   icon: LucideIcon;
   selected: boolean;
+  /** What's missing before this block can run, or null when it's ready. */
+  warning: string | null;
 }
 
 function BlockNode({ data }: NodeProps<Node<BlockData>>) {
@@ -58,6 +66,21 @@ function BlockNode({ data }: NodeProps<Node<BlockData>>) {
       <span className="bg-background text-muted-foreground absolute -top-3 left-1/2 -translate-x-1/2 rounded border p-1">
         <Icon className="h-3.5 w-3.5" />
       </span>
+      {data.warning && (
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span
+                className="border-warning/40 bg-background text-warning absolute -top-2.5 -right-2.5 flex h-6 w-6 items-center justify-center rounded-full border shadow-sm"
+                aria-label={`Not fully set up: ${data.warning}`}
+              >
+                <TriangleAlert className="h-3.5 w-3.5" />
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>{data.warning}</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      )}
       <Handle type="source" position={Position.Bottom} className="!opacity-0" />
     </div>
   );
@@ -148,6 +171,7 @@ export default function Canvas({
           tone: "trigger",
           icon: trigger?.icon ?? Zap,
           selected: triggerSelected,
+          warning: trigger?.validate?.(automation.trigger_config) ?? null,
         } satisfies BlockData,
       },
     ];
@@ -166,6 +190,7 @@ export default function Canvas({
           tone: ui?.group === "Email" ? "email" : "plain",
           icon: ui?.icon ?? Zap,
           selected: selectedNodeId === step.id,
+          warning: ui ? (ui.validate?.(step.config) ?? null) : "Unknown step type",
         } satisfies BlockData,
       });
     });

@@ -173,6 +173,22 @@ Decisions made while building it:
 - **Publish-time config validation.** Structure is validated on every save; per-node config
   only when publishing. Otherwise a step could never be saved half-finished, which is what
   the sidebar does constantly.
+- **Required fields are flagged on the block, not just at publish.** Each web
+  registry entry carries a `validate(config)` mirroring its API zod schema; the
+  canvas renders a yellow warning on any block that isn't ready, with a tooltip
+  naming what's missing. The API stays the enforcement point (publish is
+  refused); this only means nobody has to hit publish to discover it.
+- **List triggers require at least one list.** Empty `list_ids` briefly meant
+  "any list"; that made the warning icon a lie and, worse, an unconfigured
+  trigger would mail everyone who joined anything. An empty selection now fails
+  to parse, so it neither publishes nor matches.
+- **`send_custom_email` requires an explicit connection** (and a non-empty
+  body). It was optional, which let an automation be published that could never
+  send -- the chain resolved empty and every email was dropped at send time.
+- **A published automation can still be edited into an incomplete state** --
+  graph saves aren't re-validated, deliberately, or you couldn't add a block to
+  a live automation and configure it afterwards. The warning icon is what
+  surfaces this; the engine logs and skips a node whose config no longer parses.
 - **The visual (GrapesJS) editing mode is left out of automation emails** -- it needs far
   more room than a 520px sidebar. `ContentTypeEditor` grew an `allowedTypes` prop for this.
 

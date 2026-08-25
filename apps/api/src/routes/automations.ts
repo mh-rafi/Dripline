@@ -46,7 +46,11 @@ function assertStructurallyValid(graph: AutomationGraph): void {
 function assertPublishable(graph: AutomationGraph, triggerType: string, triggerConfig: unknown) {
   const trigger = getTrigger(triggerType);
   if (!trigger) throw new BadRequestError(`unknown trigger type "${triggerType}"`);
-  const parsedTrigger = trigger.parseConfig(triggerConfig);
+
+  const parsedTrigger = safeParseNode(trigger.parseConfig, triggerConfig);
+  if (!parsedTrigger.ok) {
+    throw new BadRequestError(`"${trigger.label}" is not fully configured: ${parsedTrigger.error}`);
+  }
   if (!graph.entry) throw new BadRequestError("add at least one action before publishing");
 
   for (const node of orderedNodes(graph)) {
@@ -57,7 +61,6 @@ function assertPublishable(graph: AutomationGraph, triggerType: string, triggerC
       throw new BadRequestError(`"${action.label}" is not fully configured: ${parsed.error}`);
     }
   }
-  return parsedTrigger;
 }
 
 function safeParseNode(

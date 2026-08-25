@@ -26,6 +26,12 @@ export interface NodeUi {
   defaultConfig: NodeConfig;
   /** The one-liner under the block's title on the canvas. */
   summary: (config: NodeConfig, ctx: SummaryContext) => string;
+  /** What's still missing before this block can run, or null when it's ready.
+   * Mirrors the API's zod schema for the same node type (see
+   * `apps/api/src/automations/`) -- the API is what actually blocks publishing;
+   * this is what puts the warning on the block so nobody has to hit publish to
+   * find out. */
+  validate?: (config: NodeConfig) => string | null;
   Settings?: ComponentType<SettingsProps>;
 }
 

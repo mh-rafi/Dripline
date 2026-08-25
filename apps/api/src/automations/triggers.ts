@@ -2,15 +2,16 @@ import { z } from "zod";
 import { nanoid } from "nanoid";
 import { defineTrigger, type RegisteredTrigger } from "./types.js";
 
-/** Empty `list_ids` deliberately means "any list" -- the create dialog offers a
- * trigger before the author has picked lists, and an unconfigured trigger that
- * fires broadly is easier to notice (and fix) than one that silently never
- * fires. */
-const ListConfig = z.object({ list_ids: z.array(z.number().int()).default([]) });
+/** At least one list is required. An automation that fires on *any* list is
+ * almost never what the author meant, and the failure mode (mailing everyone
+ * who joins anything) is far worse than the alternative -- so an empty
+ * selection fails to parse, which blocks publishing and stops this trigger
+ * matching anything. The builder flags it on the block before that point. */
+const ListConfig = z.object({ list_ids: z.array(z.number().int()).min(1) });
 
 function listMatches(config: z.infer<typeof ListConfig>, listId: unknown): boolean {
   if (typeof listId !== "number") return false;
-  return config.list_ids.length === 0 || config.list_ids.includes(listId);
+  return config.list_ids.includes(listId);
 }
 
 const listApplied = defineTrigger({

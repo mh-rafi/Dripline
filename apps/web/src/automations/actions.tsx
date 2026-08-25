@@ -174,6 +174,22 @@ function SendCustomEmailSettings({ config, onChange }: SettingsProps) {
   );
 }
 
+function requireLists(config: NodeConfig): string | null {
+  return listIdsOf(config).length === 0 ? "No list selected" : null;
+}
+
+/** Mirrors the send_custom_email zod schema on the API: subject, a body, and
+ * an explicit connection (there is no implicit "any enabled connection"
+ * fallback -- see services/connections.ts). */
+function validateSendCustomEmail(config: NodeConfig): string | null {
+  const missing: string[] = [];
+  if (!stringOf(config, "subject").trim()) missing.push("subject");
+  if (!stringOf(config, "body").trim()) missing.push("body");
+  if (typeof config.connection_id !== "number") missing.push("sending connection");
+  if (missing.length === 0) return null;
+  return `Missing ${missing.join(", ")}`;
+}
+
 function listSummary(prefix: string) {
   return (config: NodeConfig, ctx: SummaryContext) => {
     const ids = listIdsOf(config);
@@ -190,6 +206,8 @@ export const ACTIONS: NodeUi[] = [
     group: "Timing",
     defaultConfig: { unit: "days", amount: 1 },
     summary: (config) => `Wait ${numberOf(config, "amount", 1)} ${unitOf(config)}`,
+    validate: (config) =>
+      numberOf(config, "amount", 0) >= 1 ? null : "Wait time must be at least 1",
     Settings: WaitSettings,
   },
   {
@@ -200,6 +218,7 @@ export const ACTIONS: NodeUi[] = [
     group: "Email",
     defaultConfig: { subject: "", body: "", content_type: "richtext", fallback_connection_ids: [] },
     summary: (config) => stringOf(config, "subject") || "No subject yet",
+    validate: validateSendCustomEmail,
     Settings: SendCustomEmailSettings,
   },
   {
@@ -210,6 +229,7 @@ export const ACTIONS: NodeUi[] = [
     group: "Contact",
     defaultConfig: { list_ids: [] },
     summary: listSummary("Add to"),
+    validate: requireLists,
     Settings: ApplyListSettings,
   },
   {
@@ -220,6 +240,7 @@ export const ACTIONS: NodeUi[] = [
     group: "Contact",
     defaultConfig: { list_ids: [] },
     summary: listSummary("Remove from"),
+    validate: requireLists,
     Settings: RemoveListSettings,
   },
 ];

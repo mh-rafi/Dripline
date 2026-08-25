@@ -18,15 +18,19 @@ function ListTriggerSettings({ config, onChange }: SettingsProps) {
       label="Lists"
       value={listIdsOf(config)}
       onChange={(list_ids) => onChange({ ...config, list_ids })}
-      emptyHint="No list selected — every list will trigger this automation."
+      emptyHint="Select at least one list — this trigger can't run until you do."
     />
   );
+}
+
+function requireLists(config: NodeConfig): string | null {
+  return listIdsOf(config).length === 0 ? "No list selected" : null;
 }
 
 function listSummary(prefix: string) {
   return (config: NodeConfig, ctx: SummaryContext) => {
     const ids = listIdsOf(config);
-    return ids.length === 0 ? `${prefix} any list` : `${prefix} ${listNames(ids, ctx.lists)}`;
+    return ids.length === 0 ? "No list selected" : `${prefix} ${listNames(ids, ctx.lists)}`;
   };
 }
 
@@ -75,6 +79,7 @@ export const TRIGGERS: NodeUi[] = [
     group: "Contact",
     defaultConfig: { list_ids: [] },
     summary: listSummary("Added to"),
+    validate: requireLists,
     Settings: ListTriggerSettings,
   },
   {
@@ -85,6 +90,7 @@ export const TRIGGERS: NodeUi[] = [
     group: "Contact",
     defaultConfig: { list_ids: [] },
     summary: listSummary("Removed from"),
+    validate: requireLists,
     Settings: ListTriggerSettings,
   },
   {

@@ -137,6 +137,8 @@ with pointer edges, not array order.
 | GET    | `/automations/:id/enrollments` | Recent enrollments with `current_node_id`, `next_run_at`, contact email                                                                                                                                                                                           |
 
 Triggers: `list_applied`, `list_removed`, `contact_created`, `webhook_incoming`.
+The two list triggers require at least one list in `trigger_config.list_ids` --
+an empty selection neither publishes nor matches anything.
 Actions: `wait`, `send_custom_email`, `apply_list`, `remove_list`.
 Both are registries (`apps/api/src/automations/`) -- adding one is a single entry there
 plus its UI counterpart in `apps/web/src/automations/`.
