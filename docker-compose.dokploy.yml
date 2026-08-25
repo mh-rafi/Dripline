@@ -21,7 +21,10 @@ services:
     volumes:
       - dripline_pg_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dripline}"]
+      # -d matters: without it pg_isready connects to a database named after
+      # the user, so a custom POSTGRES_DB makes Postgres log a FATAL every
+      # interval even though the check passes.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dripline} -d ${POSTGRES_DB:-dripline}"]
       interval: 5s
       timeout: 5s
       retries: 10

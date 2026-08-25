@@ -252,6 +252,28 @@ incomplete. Copy `.env.example` and fill it in.
 Check `DATABASE_URL` and that the database container is healthy
 (`docker compose ps`).
 
+**`password authentication failed` after changing `POSTGRES_USER` /
+`POSTGRES_PASSWORD` / `POSTGRES_DB`** -- those three are read _only_ when
+Postgres initialises an empty data directory. Once the volume holds a cluster
+they are ignored forever, so changing them after the first deploy leaves the
+app using credentials the database has never heard of. Confirm with:
+
+```bash
+docker compose exec postgres psql -U dripline -d dripline -c "\du"
+```
+
+If that works, the volume was initialised with the defaults. Decide which you
+want:
+
+- _No data worth keeping_ -- destroy the volume and redeploy:
+  `docker compose down -v && docker compose up -d`. **This deletes every
+  subscriber, campaign and automation**, so only do it on a fresh install.
+- _Keep the data_ -- leave the env vars at whatever initialised the volume, or
+  rename the role in place:
+  `ALTER ROLE dripline RENAME TO newname; ALTER ROLE newname WITH PASSWORD '...';`
+  (renaming a role clears its `scram` password, so always set a new one in the
+  same session).
+
 **The UI loads but every request 401s** -- your token is from an install with a
 different `JWT_SECRET`. Sign in again.
 
