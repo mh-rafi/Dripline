@@ -24,26 +24,24 @@ via Kysely and plain migration files, kept deliberately lean (see PRD §5).
 
 ## Getting started
 
-### With Docker Compose (recommended)
+### Running an install (Docker)
 
 ```bash
-git clone <this repo>
-cd dripline
+cp .env.example .env      # set APP_URL and the secrets it tells you to generate
 docker compose up -d
-docker compose exec api npm run migrate
 ```
 
-- API: `http://localhost:3000` (health check at `/health`)
-- Admin UI: `http://localhost:8080`
+One container serves the admin UI, the API and the background workers;
+Postgres is the only other moving part. Migrations run on start. Then put a
+reverse proxy in front of it for TLS -- or use the bundled Caddy, or deploy the
+same stack through Dokploy/Coolify. All four paths, plus a no-Docker systemd
+install, are in the [self-hosting guide](docs/self-hosting.md).
 
-Set real `JWT_SECRET` / `TRACKING_SECRET` / `APP_URL` env vars before
-exposing this outside your machine -- see [self-hosting.md](docs/self-hosting.md).
-
-### Without Docker
+### Developing
 
 ```bash
 cp apps/api/.env.example apps/api/.env
-docker compose up -d postgres   # or point DATABASE_URL at your own Postgres
+docker compose -f docker-compose.dev.yml up -d   # or point DATABASE_URL at your own Postgres
 npm install
 npm run migrate
 npm run dev            # API + background workers
@@ -55,3 +53,15 @@ cd apps/web && npm run dev   # admin UI, separate terminal, http://localhost:517
 
 On first run, open the admin UI and use "First-time setup" on the login
 screen to create the initial admin account.
+
+## License
+
+[AGPL-3.0-or-later](LICENSE). You can run Dripline for anything -- personal
+projects, your own company's mail, a client's -- and modify it freely. If you
+run a **modified** version as a network service, section 13 obliges you to make
+that modified source available to its users; point `SOURCE_URL` at it and the
+admin UI will link there for you.
+
+Copyright (C) 2026 Mahmudul Hasan. "Dripline" is not licensed under the AGPL --
+see [NOTICE](NOTICE). Contributions are accepted under the terms in
+[CONTRIBUTING.md](CONTRIBUTING.md).

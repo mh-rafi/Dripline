@@ -1,0 +1,29 @@
+# Overlay that adds Caddy in front of the app for automatic HTTPS. Point an A
+# record at this host first, set APP_DOMAIN in .env (and APP_URL to
+# https://that-domain), then:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.caddy.yml up -d
+#
+# Skip this overlay if the host already runs a reverse proxy -- see
+# deploy/nginx.conf.example and docs/self-hosting.md.
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?set APP_DOMAIN in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
+volumes:
+  caddy_data:
+  caddy_config:

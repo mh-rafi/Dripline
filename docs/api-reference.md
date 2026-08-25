@@ -1,12 +1,21 @@
 # API reference
 
-Base path: `/api/v1`. All endpoints except `/auth/login`, `/auth/setup`, and
-`/track/*` / `/unsubscribe/*` require an `Authorization: Bearer <token>`
+Base path: `/api/v1`. All endpoints except `/meta`, `/auth/login`, `/auth/setup`,
+and `/track/*` / `/unsubscribe/*` require an `Authorization: Bearer <token>`
 header -- either an admin session JWT (from `/auth/login`) or an API key
 (from **Settings → API keys** in the admin UI, format `dk_xxx_xxx`).
 
 Request/response bodies are JSON. Validation errors return `400` with
 `{ "error": "validation failed", "issues": [...] }` (Zod issue format).
+
+## Instance
+
+| Method | Path    | Notes                                                                                       |
+| ------ | ------- | ------------------------------------------------------------------------------------------- |
+| GET    | `/meta` | Public. `{ version, source_url, license }` -- the AGPL section 13 source offer the UI links |
+
+`/health` (outside `/api/v1`) returns `{ status: "ok" }` after a database
+round-trip, and is what the container healthcheck polls.
 
 ## Auth
 

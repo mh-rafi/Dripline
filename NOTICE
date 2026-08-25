@@ -1,0 +1,44 @@
+Dripline
+Copyright (C) 2026 Mahmudul Hasan
+
+Contributors retain copyright in their own contributions, licensed to the
+project under the terms in CONTRIBUTING.md.
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU Affero General Public License as published by the Free
+Software Foundation, either version 3 of the License, or (at your option) any
+later version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License along
+with this program. If not, see <https://www.gnu.org/licenses/>.
+
+
+TRADEMARKS
+
+"Dripline" and the Dripline logo are not licensed under the AGPL and no
+trademark rights are granted by it. You may run, modify and redistribute this
+software freely; you may not use the name to imply that a modified version or a
+separate hosted service is endorsed by or affiliated with the project.
+
+
+THIRD-PARTY COMPONENTS
+
+This distribution bundles third-party software under its own licenses. The
+notable ones, and everything the build pulls in transitively, keep their
+original terms:
+
+  TinyMCE (apps/web)         GPL-2.0-or-later, or a commercial license from
+                             Tiny Technologies. This distribution uses the GPL
+                             option (see licenseKey: "gpl" in
+                             apps/web/src/components/content-editor/RichTextEditor.tsx).
+                             GPL-2.0-or-later may be taken as GPL-3.0, which
+                             AGPL-3.0 section 13 permits combining with.
+  GrapesJS (apps/web)        BSD-3-Clause
+  AWS SDK (apps/api)         Apache-2.0
+
+Everything else in the dependency tree is MIT, ISC, BSD, MPL-2.0 or Apache-2.0.
+Run `npm ls --all` for the full set.

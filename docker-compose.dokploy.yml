@@ -1,0 +1,51 @@
+# Standalone stack for Dokploy (or any host where Traefik already terminates
+# TLS and routes by domain). Differs from docker-compose.yml in two ways: no
+# published ports, and the app joins the proxy's network so Traefik can reach
+# it by service name.
+#
+# In Dokploy: create a Compose service, point it at this repository, set the
+# compose path to ./docker-compose.dokploy.yml, fill in the Environment tab
+# (see .env.example), then add a domain in the Domains tab -- service "app",
+# port 3000. Set APP_URL to that same https:// domain.
+
+name: dripline
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-dripline}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the environment}
+      POSTGRES_DB: ${POSTGRES_DB:-dripline}
+    volumes:
+      - dripline_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dripline}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    image: ${DRIPLINE_IMAGE:-ghcr.io/mh-rafi/dripline}:${DRIPLINE_VERSION:-latest}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER:-dripline}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-dripline}
+      APP_URL: ${APP_URL:?set APP_URL in the environment}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in the environment}
+      TRACKING_SECRET: ${TRACKING_SECRET:?set TRACKING_SECRET in the environment}
+      TRUST_PROXY: ${TRUST_PROXY:-true}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - default
+      - dokploy-network
+
+networks:
+  dokploy-network:
+    external: true
+
+volumes:
+  dripline_pg_data:

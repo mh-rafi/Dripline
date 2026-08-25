@@ -1,5 +1,7 @@
+import path from "node:path";
 import Fastify, { type FastifyInstance } from "fastify";
 import cors from "@fastify/cors";
+import fastifyStatic from "@fastify/static";
 import type pg from "pg";
 import { ZodError } from "zod";
 import type { Config } from "./config.js";
@@ -18,7 +20,13 @@ import bounceRoutes from "./routes/bounces.js";
 import trackingRoutes from "./routes/tracking.js";
 
 export function buildApp(pool: pg.Pool, db: DB, config: Config): FastifyInstance {
-  const app = Fastify({ logger: true });
+  // Fastify's types omit the hop-count form of trustProxy that proxy-addr (and
+  // Fastify's own docs) accept, so a numeric TRUST_PROXY needs the cast.
+  const app = Fastify({
+    logger: true,
+    trustProxy: config.trustProxy as boolean | string,
+    bodyLimit: config.bodyLimitBytes,
+  });
 
   app.register(cors, { origin: true });
   app.register(authPlugin, { config, db });
@@ -42,6 +50,15 @@ export function buildApp(pool: pg.Pool, db: DB, config: Config): FastifyInstance
     return { status: "ok" };
   });
 
+  // Unauthenticated on purpose: this is how the admin UI (and anyone else
+  // interacting with the instance) is told where to get the source, which
+  // AGPL-3.0 section 13 requires of a network-deployed modified version.
+  app.get("/api/v1/meta", async () => ({
+    version: config.version,
+    source_url: config.sourceUrl,
+    license: "AGPL-3.0-or-later",
+  }));
+
   app.register(authRoutes, { db });
   app.register(subscriberRoutes, { db });
   app.register(listRoutes, { db });
@@ -51,6 +68,36 @@ export function buildApp(pool: pg.Pool, db: DB, config: Config): FastifyInstance
   app.register(automationRoutes, { db });
   app.register(bounceRoutes, { db });
   app.register(trackingRoutes, { db, config });
+
+  // When a built admin UI is present this process serves it too, so a whole
+  // install is one origin and one port -- which APP_URL depends on, since
+  // tracking links (/api/v1/track/...) and the unsubscribe page (a client-side
+  // route) are both reached through it.
+  if (config.webDist) {
+    const webDist = config.webDist;
+    app.register(fastifyStatic, {
+      root: webDist,
+      // Vite fingerprints everything under assets/, so those are immutable;
+      // index.html must never be cached or upgrades serve a stale shell
+      // pointing at deleted bundles.
+      setHeaders(reply, filePath) {
+        const relative = path.relative(webDist, filePath);
+        reply.header(
+          "cache-control",
+          relative.startsWith("assets" + path.sep)
+            ? "public, max-age=31536000, immutable"
+            : "no-cache",
+        );
+      },
+    });
+
+    app.setNotFoundHandler((req, reply) => {
+      if (req.raw.url?.startsWith("/api/")) {
+        return reply.code(404).send({ error: "not found" });
+      }
+      return reply.sendFile("index.html");
+    });
+  }
 
   app.setErrorHandler((err, _req, reply) => {
     if (err instanceof HttpError) {

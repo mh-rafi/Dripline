@@ -1,0 +1,6 @@
+# Used by docker-compose.caddy.yml. Caddy obtains and renews the certificate
+# for $APP_DOMAIN on its own; nothing else to configure.
+{$APP_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy app:3000
+}

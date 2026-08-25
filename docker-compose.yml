@@ -1,47 +1,50 @@
+# Default self-hosting stack: Dripline + Postgres, nothing else.
+#
+#   cp .env.example .env   # then fill in APP_URL and the three secrets
+#   docker compose up -d
+#
+# The app is published on 127.0.0.1 only -- put your own reverse proxy (Caddy,
+# nginx, Traefik) in front of it for TLS, or add the bundled Caddy with:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.caddy.yml up -d
+#
+# To build the image from this checkout instead of pulling a published one:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+
+name: dripline
+
 services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: dripline
-      POSTGRES_PASSWORD: dripline
-      POSTGRES_DB: dripline
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: ${POSTGRES_USER:-dripline}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-dripline}
     volumes:
       - dripline_pg_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U dripline"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dripline}"]
       interval: 5s
       timeout: 5s
       retries: 10
 
-  api:
-    build:
-      context: .
-      dockerfile: apps/api/Dockerfile
+  app:
+    image: ${DRIPLINE_IMAGE:-ghcr.io/mh-rafi/dripline}:${DRIPLINE_VERSION:-latest}
     restart: unless-stopped
     environment:
-      PORT: 3000
-      DATABASE_URL: postgres://dripline:dripline@postgres:5432/dripline
-      JWT_SECRET: ${JWT_SECRET:-change-me-jwt-secret}
-      TRACKING_SECRET: ${TRACKING_SECRET:-change-me-tracking-secret}
-      APP_URL: ${APP_URL:-http://localhost:3000}
+      NODE_ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER:-dripline}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-dripline}
+      APP_URL: ${APP_URL:?set APP_URL in .env}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      TRACKING_SECRET: ${TRACKING_SECRET:?set TRACKING_SECRET in .env}
+      TRUST_PROXY: ${TRUST_PROXY:-true}
     ports:
-      - "3000:3000"
+      - "${BIND_ADDRESS:-127.0.0.1}:${HTTP_PORT:-3000}:3000"
     depends_on:
       postgres:
         condition: service_healthy
-
-  web:
-    build:
-      context: .
-      dockerfile: apps/web/Dockerfile
-    restart: unless-stopped
-    ports:
-      - "8080:80"
-    depends_on:
-      - api
 
 volumes:
   dripline_pg_data:

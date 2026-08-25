@@ -28,6 +28,8 @@ planned. Phases are built roughly in order; dependencies are noted in each file.
   (Phase 6 addendum).
 - [mailbox_bounce_scanning.md](mailbox_bounce_scanning.md) -- IMAP mailbox-scan bounce
   detection, per-connection (Phase 7 addendum). Planning only, not started.
+- [deployment.md](deployment.md) -- packaging and deployment: one container image, four
+  supported install paths, automatic migrations (Phase 7 addendum). Built and verified.
 - [automations_v2.md](automations_v2.md) -- the visual node-graph automation builder that
   replaces Phases 4 and 5 (canvas + sidebar UI, trigger/action registries, branching
   roadmap). Phase 1 of that plan is built; Phases 2-4 are not started.
@@ -36,7 +38,9 @@ planned. Phases are built roughly in order; dependencies are noted in each file.
 
 Public archive pages, load testing at scale, running the listmonk import script against a
 real listmonk database, GrapesJS CSS inlining (uses a `<style>` block instead, which very
-old Outlook versions handle poorly), and committing this repo to git.
+old Outlook versions handle poorly), and committing this repo to git. The container image
+is built and verified locally but not yet published -- the GHCR release workflow first runs
+on the first `v*.*.*` tag.
 
 ## Open sequencing decisions
 

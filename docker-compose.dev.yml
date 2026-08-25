@@ -1,0 +1,29 @@
+# Postgres only, with the throwaway credentials in apps/api/.env.example, for
+# working on Dripline itself:
+#
+#   docker compose -f docker-compose.dev.yml up -d
+#
+# Not for running an install -- see docker-compose.yml for that.
+
+name: dripline-dev
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: dripline
+      POSTGRES_PASSWORD: dripline
+      POSTGRES_DB: dripline
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - dripline_dev_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dripline"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  dripline_dev_pg_data:

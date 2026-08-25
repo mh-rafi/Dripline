@@ -1,0 +1,35 @@
+# Dripline as a plain systemd service, no Docker. See "Node.js + systemd" in
+# docs/self-hosting.md for the build steps this assumes.
+#
+#   install -m 0644 deploy/dripline.service /etc/systemd/system/dripline.service
+#   systemctl daemon-reload && systemctl enable --now dripline
+
+[Unit]
+Description=Dripline
+Documentation=https://github.com/mh-rafi/dripline
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=dripline
+Group=dripline
+WorkingDirectory=/opt/dripline/apps/api
+EnvironmentFile=/etc/dripline/dripline.env
+# Schema changes are applied before the app starts, so an upgrade is: pull,
+# npm ci && npm run build, systemctl restart dripline.
+ExecStartPre=/opt/dripline/node_modules/.bin/node-pg-migrate up
+ExecStart=/usr/bin/node dist/index.js
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/dripline
+
+[Install]
+WantedBy=multi-user.target

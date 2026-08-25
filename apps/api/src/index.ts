@@ -36,7 +36,7 @@ await scheduleBounceScan(boss);
 
 const app = buildApp(pool, db, config);
 
-app.listen({ port: config.port, host: "0.0.0.0" }).catch((err) => {
+app.listen({ port: config.port, host: config.host }).catch((err) => {
   app.log.error(err);
   process.exit(1);
 });

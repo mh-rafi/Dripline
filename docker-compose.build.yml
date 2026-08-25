@@ -1,0 +1,11 @@
+# Overlay that builds the image from this checkout instead of pulling a
+# published one. Building the admin UI needs roughly 2 GB of free RAM.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+
+services:
+  app:
+    image: dripline:local
+    build:
+      context: .
+      dockerfile: Dockerfile

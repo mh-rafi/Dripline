@@ -15,6 +15,10 @@ Vite, Tailwind v4 + shadcn/ui, light/dark/system theming).
   automation builder that replaces Phases 4/5. Phase 1 built & verified;
   Phases 2–4 (remaining actions, conditional branching, reporting) planned.
   Read it before touching `apps/*/src/automations/`.
+- [docs/plan/deployment.md](docs/plan/deployment.md) -- how this ships: one image
+  (API + workers + admin UI on one origin), migrations at container start,
+  and the Compose/systemd install paths. Read it before touching the
+  `Dockerfile`, `docker-compose*.yml`, `deploy/`, or how `APP_URL` is used.
 - [docs/plan/UI_UX_Plan.md](docs/plan/UI_UX_Plan.md) and
   [docs/plan/subscriber_bulk_actions.md](docs/plan/subscriber_bulk_actions.md) —
   two earlier large plans (Tailwind/shadcn redesign, subscriber bulk actions

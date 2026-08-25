@@ -4,7 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "description": "Open-source self-hosted email campaigns, drip automation, and multi-provider sending.",
-  "license": "MIT",
+  "license": "AGPL-3.0-or-later",
+  "author": "Mahmudul Hasan",
   "workspaces": [
     "apps/*"
   ],

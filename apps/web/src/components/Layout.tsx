@@ -1,4 +1,6 @@
+import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { api } from "../lib/api.js";
 import { useAuth } from "../lib/auth.js";
 import { useTheme } from "../lib/theme.js";
 import { cn } from "../lib/utils.js";
@@ -34,6 +36,38 @@ import {
   Settings as SettingsIcon,
   FileText,
 } from "lucide-react";
+
+interface Meta {
+  version: string;
+  source_url: string;
+  license: string;
+}
+
+// AGPL-3.0 section 13 requires that users interacting with a network-deployed
+// modified version are offered its corresponding source. The API reports where
+// that is (SOURCE_URL), so a fork only has to set the env var.
+function SourceLink() {
+  const [meta, setMeta] = useState<Meta | null>(null);
+
+  useEffect(() => {
+    api
+      .get<Meta>("/meta")
+      .then(setMeta)
+      .catch(() => setMeta(null));
+  }, []);
+
+  if (!meta) return null;
+  return (
+    <a
+      href={meta.source_url}
+      target="_blank"
+      rel="noreferrer"
+      className="text-muted-foreground hover:text-foreground truncate px-2 py-1 text-xs"
+    >
+      Dripline {meta.version} &middot; {meta.license} source
+    </a>
+  );
+}
 
 const navLinks = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
@@ -119,6 +153,7 @@ export default function Layout() {
         </SidebarContent>
         <SidebarFooter>
           <div className="text-muted-foreground truncate px-2 py-1 text-xs">{user?.email}</div>
+          <SourceLink />
           <ThemeToggle />
           <Button
             variant="outline"

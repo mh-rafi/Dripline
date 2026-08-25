@@ -1,0 +1,29 @@
+# Dripline behind an existing nginx. Copy to
+# /etc/nginx/sites-available/dripline, adjust server_name, then:
+#
+#   ln -s /etc/nginx/sites-available/dripline /etc/nginx/sites-enabled/
+#   certbot --nginx -d mail.example.com     # adds the TLS server block
+#   nginx -t && systemctl reload nginx
+#
+# Everything -- admin UI, API, tracking links, unsubscribe page -- is one
+# origin on one upstream port, so this is the whole configuration.
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name mail.example.com;
+
+    # CSV subscriber imports are posted as a single JSON body; keep this at
+    # least as large as the app's own BODY_LIMIT_MB (8 MB by default).
+    client_max_body_size 8m;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;
+    }
+}

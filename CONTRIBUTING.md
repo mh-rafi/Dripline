@@ -17,7 +17,7 @@ Thanks for considering a contribution.
 
 ```bash
 npm install
-docker compose up -d postgres
+docker compose -f docker-compose.dev.yml up -d
 cp apps/api/.env.example apps/api/.env
 npm run migrate
 npm run dev            # API + workers
@@ -50,6 +50,28 @@ CI runs the same checks against a real Postgres instance.
 - Keep the stack lean: think twice before adding a new backing service
   (Redis, etc.) -- Postgres-backed alternatives (`pg-boss` for jobs) are
   preferred so self-hosting stays to two containers.
+- One process serves the API, the workers and the admin UI, so an install is
+  a single origin. Anything that would split them (a second port, a
+  build-time API base URL) breaks the tracking and unsubscribe links that are
+  built from `APP_URL` -- see [docs/plan/deployment.md](docs/plan/deployment.md).
+
+## Contributor terms
+
+Dripline is [AGPL-3.0-or-later](LICENSE). By opening a pull request you agree
+that:
+
+1. Your contribution is licensed to the project and to everyone else under
+   AGPL-3.0-or-later, and
+2. You grant Mahmudul Hasan (the copyright holder) a perpetual, irrevocable
+   right to also distribute your contribution under other license terms.
+
+Point 2 exists so the project can sell commercial licenses to companies whose
+policies forbid AGPL, which is how the work gets funded. It does not take your
+rights away -- you keep your copyright and can do whatever else you like with
+your own code.
+
+If you are contributing on behalf of an employer, make sure they are on board
+before you open the PR.
 
 ## Reporting bugs / requesting features
 
