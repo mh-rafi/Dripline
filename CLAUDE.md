@@ -15,15 +15,26 @@ Vite, Tailwind v4 + shadcn/ui, light/dark/system theming).
   automation builder that replaces Phases 4/5. Phase 1 built & verified;
   Phases 2–4 (remaining actions, conditional branching, reporting) planned.
   Read it before touching `apps/*/src/automations/`.
-- [docs/plan/deployment.md](docs/plan/deployment.md) -- how this ships: one image
-  (API + workers + admin UI on one origin), migrations at container start,
-  and the Compose/systemd install paths. Read it before touching the
-  `Dockerfile`, `docker-compose*.yml`, `deploy/`, or how `APP_URL` is used.
+- [docs/self-hosting.md](docs/self-hosting.md) — the install guide users follow;
+  [docs/plan/deployment.md](docs/plan/deployment.md) — why it's packaged that
+  way, and what's left. Read both before touching `Dockerfile`,
+  `docker-compose*.yml`, `deploy/`, or anything reading `APP_URL`.
 - [docs/plan/UI_UX_Plan.md](docs/plan/UI_UX_Plan.md) and
   [docs/plan/subscriber_bulk_actions.md](docs/plan/subscriber_bulk_actions.md) —
   two earlier large plans (Tailwind/shadcn redesign, subscriber bulk actions
   and pagination), both implemented and reviewed; also linked from Phase 6's
   file.
+
+## Deploying
+
+- One process serves the API, the workers and the admin UI, so an install is a
+  single origin on one port. `APP_URL` is that origin — tracking links and the
+  unsubscribe page are built from it. Don't split them apart again.
+- Migrations run at container start via `deploy/entrypoint.sh`, never as a
+  manual step. `docker-compose.yml` is the install stack (needs a filled-in
+  `.env`); `docker-compose.dev.yml` is Postgres-only, for working locally.
+- Pushes only build the image (`image.yml`); it publishes to GHCR on `v*.*.*`
+  tags (`release.yml`).
 
 ## Conventions
 
@@ -45,6 +56,9 @@ Vite, Tailwind v4 + shadcn/ui, light/dark/system theming).
   Radix and React Flow declare them as `*` peers, so without it npm hoists a
   second (older) copy and every `ReactNode` stops matching itself. Don't drop it
   while any dependency still peers on `@types/react: "*"`.
+- AGPL-3.0-or-later: every new dependency must be license-compatible, and
+  anything copyleft goes in `NOTICE`. `GET /api/v1/meta` plus `SOURCE_URL` are
+  the section 13 source offer the admin UI links to — don't remove them.
 - Root Prettier/ESLint cover both apps: `npm run build && npm run lint &&
 npm run format` before considering anything done.
 
