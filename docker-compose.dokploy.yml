@@ -14,6 +14,10 @@ services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+    # These three are applied only while initialising an empty data
+    # directory. Set them before the first deploy: changing them later
+    # leaves the existing volume on the old credentials and the app can no
+    # longer authenticate.
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-dripline}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the environment}
