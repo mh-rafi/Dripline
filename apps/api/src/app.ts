@@ -10,6 +10,8 @@ import authPlugin from "./auth/plugin.js";
 import { BadRequestError, HttpError } from "./lib/errors.js";
 
 import authRoutes from "./routes/auth.js";
+import userRoutes from "./routes/users.js";
+import roleRoutes from "./routes/roles.js";
 import subscriberRoutes from "./routes/subscribers.js";
 import listRoutes from "./routes/lists.js";
 import templateRoutes from "./routes/templates.js";
@@ -63,6 +65,8 @@ export function buildApp(pool: pg.Pool, db: DB, config: Config): FastifyInstance
   }));
 
   app.register(authRoutes, { db });
+  app.register(userRoutes, { db });
+  app.register(roleRoutes, { db });
   app.register(subscriberRoutes, { db });
   app.register(listRoutes, { db });
   app.register(templateRoutes, { db });

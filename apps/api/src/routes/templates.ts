@@ -28,73 +28,93 @@ export default async function templateRoutes(app: FastifyInstance, opts: { db: D
   const { db } = opts;
   app.addHook("preHandler", app.requireAuth);
 
-  app.get("/api/v1/templates", async () =>
+  app.get("/api/v1/templates", { preHandler: app.requirePermission("templates:get") }, async () =>
     db.selectFrom("templates").selectAll().orderBy("id", "desc").execute(),
   );
 
-  app.get("/api/v1/templates/:id", async (req) => {
-    const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
-    const template = await db
-      .selectFrom("templates")
-      .selectAll()
-      .where("id", "=", id)
-      .executeTakeFirst();
-    if (!template) throw new NotFoundError("template");
-    return template;
-  });
+  app.get(
+    "/api/v1/templates/:id",
+    { preHandler: app.requirePermission("templates:get") },
+    async (req) => {
+      const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
+      const template = await db
+        .selectFrom("templates")
+        .selectAll()
+        .where("id", "=", id)
+        .executeTakeFirst();
+      if (!template) throw new NotFoundError("template");
+      return template;
+    },
+  );
 
-  app.post("/api/v1/templates", async (req, reply) => {
-    const body = CreateTemplate.parse(req.body);
-    const template = await db
-      .insertInto("templates")
-      .values({
-        name: body.name,
-        subject: body.subject ?? "",
-        body: body.body,
-        is_default: body.is_default ?? false,
-      })
-      .returningAll()
-      .executeTakeFirstOrThrow();
-    reply.code(201);
-    return template;
-  });
+  app.post(
+    "/api/v1/templates",
+    { preHandler: app.requirePermission("templates:manage") },
+    async (req, reply) => {
+      const body = CreateTemplate.parse(req.body);
+      const template = await db
+        .insertInto("templates")
+        .values({
+          name: body.name,
+          subject: body.subject ?? "",
+          body: body.body,
+          is_default: body.is_default ?? false,
+        })
+        .returningAll()
+        .executeTakeFirstOrThrow();
+      reply.code(201);
+      return template;
+    },
+  );
 
-  app.patch("/api/v1/templates/:id", async (req) => {
-    const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
-    const body = UpdateTemplate.parse(req.body);
-    const template = await db
-      .updateTable("templates")
-      .set(body)
-      .where("id", "=", id)
-      .returningAll()
-      .executeTakeFirst();
-    if (!template) throw new NotFoundError("template");
-    return template;
-  });
+  app.patch(
+    "/api/v1/templates/:id",
+    { preHandler: app.requirePermission("templates:manage") },
+    async (req) => {
+      const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
+      const body = UpdateTemplate.parse(req.body);
+      const template = await db
+        .updateTable("templates")
+        .set(body)
+        .where("id", "=", id)
+        .returningAll()
+        .executeTakeFirst();
+      if (!template) throw new NotFoundError("template");
+      return template;
+    },
+  );
 
   // Renders the (possibly unsaved) template body with sample content
   // standing in for {{ Body }}, so a template can be previewed on its own
   // page without needing a real campaign.
-  app.post("/api/v1/templates/preview", async (req) => {
-    const { body } = PreviewTemplate.parse(req.body);
-    const merged = body.includes("{{ Body }}") ? body.replace("{{ Body }}", SAMPLE_BODY) : body;
-    const html = renderTemplate(merged, {
-      Subscriber: {
-        ID: 0,
-        UUID: "",
-        Email: "preview@example.com",
-        Name: "Preview Subscriber",
-        Attribs: {},
-      },
-      Campaign: { ID: 0, UUID: "", Name: "Preview", Subject: "Preview subject" },
-      UnsubscribeURL: "#",
-    });
-    return { html };
-  });
+  app.post(
+    "/api/v1/templates/preview",
+    { preHandler: app.requirePermission("templates:get") },
+    async (req) => {
+      const { body } = PreviewTemplate.parse(req.body);
+      const merged = body.includes("{{ Body }}") ? body.replace("{{ Body }}", SAMPLE_BODY) : body;
+      const html = renderTemplate(merged, {
+        Subscriber: {
+          ID: 0,
+          UUID: "",
+          Email: "preview@example.com",
+          Name: "Preview Subscriber",
+          Attribs: {},
+        },
+        Campaign: { ID: 0, UUID: "", Name: "Preview", Subject: "Preview subject" },
+        UnsubscribeURL: "#",
+      });
+      return { html };
+    },
+  );
 
-  app.delete("/api/v1/templates/:id", async (req) => {
-    const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
-    await db.deleteFrom("templates").where("id", "=", id).execute();
-    return { ok: true };
-  });
+  app.delete(
+    "/api/v1/templates/:id",
+    { preHandler: app.requirePermission("templates:manage") },
+    async (req) => {
+      const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
+      await db.deleteFrom("templates").where("id", "=", id).execute();
+      return { ok: true };
+    },
+  );
 }

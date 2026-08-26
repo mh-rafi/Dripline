@@ -18,6 +18,7 @@ const statusColorMap: Record<string, string> = {
   paused: "bg-warning/15 text-warning border border-warning/20",
   unconfirmed: "bg-warning/15 text-warning border border-warning/20",
   cancelled: "bg-destructive/15 text-destructive border border-destructive/20",
+  disabled: "bg-destructive/15 text-destructive border border-destructive/20",
   blocklisted: "bg-destructive/15 text-destructive border border-destructive/20",
   unsubscribed: "bg-destructive/15 text-destructive border border-destructive/20",
   failed: "bg-destructive/15 text-destructive border border-destructive/20",

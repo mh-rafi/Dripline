@@ -33,6 +33,9 @@ planned. Phases are built roughly in order; dependencies are noted in each file.
 - [automations_v2.md](automations_v2.md) -- the visual node-graph automation builder that
   replaces Phases 4 and 5 (canvas + sidebar UI, trigger/action registries, branching
   roadmap). Phase 1 of that plan is built; Phases 2-4 are not started.
+- [roles_and_permissions.md](roles_and_permissions.md) -- granular per-resource roles, a
+  user/API account type split, and API tokens scoped by role (Phase 1 addendum, replaces
+  its original unscoped API keys). Built and verified.
 
 ## Explicitly not done
 

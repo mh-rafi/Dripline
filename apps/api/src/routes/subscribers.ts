@@ -108,133 +108,177 @@ export default async function subscriberRoutes(app: FastifyInstance, opts: { db:
   const { db } = opts;
   app.addHook("preHandler", app.requireAuth);
 
-  app.get("/api/v1/subscribers", async (req) => {
-    const query = ListQuery.parse(req.query);
-    const filter: SubscriberFilter = {
-      q: query.q,
-      list_ids: query.list_ids,
-      list_statuses: query.list_statuses,
-      blocklisted: query.blocklisted,
-    };
+  app.get(
+    "/api/v1/subscribers",
+    { preHandler: app.requirePermission("subscribers:get") },
+    async (req) => {
+      const query = ListQuery.parse(req.query);
+      const filter: SubscriberFilter = {
+        q: query.q,
+        list_ids: query.list_ids,
+        list_statuses: query.list_statuses,
+        blocklisted: query.blocklisted,
+      };
 
-    const pageQuery = applySubscriberFilter(
-      db
-        .selectFrom("subscribers")
-        .selectAll()
-        .orderBy("id", "desc")
-        .limit(query.limit)
-        .offset(query.offset),
-      filter,
-    );
-    const totalQuery = applySubscriberFilter(
-      db.selectFrom("subscribers").select(db.fn.countAll().as("count")),
-      filter,
-    );
+      const pageQuery = applySubscriberFilter(
+        db
+          .selectFrom("subscribers")
+          .selectAll()
+          .orderBy("id", "desc")
+          .limit(query.limit)
+          .offset(query.offset),
+        filter,
+      );
+      const totalQuery = applySubscriberFilter(
+        db.selectFrom("subscribers").select(db.fn.countAll().as("count")),
+        filter,
+      );
 
-    const [subscribers, totalResult] = await Promise.all([
-      pageQuery.execute(),
-      totalQuery.executeTakeFirstOrThrow(),
-    ]);
+      const [subscribers, totalResult] = await Promise.all([
+        pageQuery.execute(),
+        totalQuery.executeTakeFirstOrThrow(),
+      ]);
 
-    return { subscribers, total: Number(totalResult.count) };
-  });
+      return { subscribers, total: Number(totalResult.count) };
+    },
+  );
 
-  app.get("/api/v1/subscribers/:id", async (req) => {
-    const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
-    const subscriber = await getSubscriberOrThrow(db, id);
-    const lists = await db
-      .selectFrom("subscriber_lists")
-      .innerJoin("lists", "lists.id", "subscriber_lists.list_id")
-      .select(["lists.id", "lists.name", "lists.optin", "subscriber_lists.status"])
-      .where("subscriber_id", "=", id)
-      .execute();
-    return { ...subscriber, lists };
-  });
+  app.get(
+    "/api/v1/subscribers/:id",
+    { preHandler: app.requirePermission("subscribers:get") },
+    async (req) => {
+      const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
+      const subscriber = await getSubscriberOrThrow(db, id);
+      const lists = await db
+        .selectFrom("subscriber_lists")
+        .innerJoin("lists", "lists.id", "subscriber_lists.list_id")
+        .select(["lists.id", "lists.name", "lists.optin", "subscriber_lists.status"])
+        .where("subscriber_id", "=", id)
+        .execute();
+      return { ...subscriber, lists };
+    },
+  );
 
-  app.post("/api/v1/subscribers", async (req, reply) => {
-    const body = CreateSubscriber.parse(req.body);
-    let subscriber = await createSubscriber(db, {
-      email: body.email,
-      name: body.name ?? "",
-      attribs: body.attribs,
-    });
+  app.post(
+    "/api/v1/subscribers",
+    { preHandler: app.requirePermission("subscribers:manage") },
+    async (req, reply) => {
+      const body = CreateSubscriber.parse(req.body);
+      let subscriber = await createSubscriber(db, {
+        email: body.email,
+        name: body.name ?? "",
+        attribs: body.attribs,
+      });
 
-    for (const listId of body.list_ids ?? []) {
-      await addToList(db, subscriber.id, listId, body.preconfirm ? "confirmed" : undefined);
-    }
+      for (const listId of body.list_ids ?? []) {
+        await addToList(db, subscriber.id, listId, body.preconfirm ? "confirmed" : undefined);
+      }
 
-    if (body.status === "blocklisted") {
-      await blocklistSubscriber(db, subscriber.id);
-      subscriber = await getSubscriberOrThrow(db, subscriber.id);
-    }
+      if (body.status === "blocklisted") {
+        await blocklistSubscriber(db, subscriber.id);
+        subscriber = await getSubscriberOrThrow(db, subscriber.id);
+      }
 
-    reply.code(201);
-    return subscriber;
-  });
+      reply.code(201);
+      return subscriber;
+    },
+  );
 
-  app.patch("/api/v1/subscribers/:id", async (req) => {
-    const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
-    const body = UpdateSubscriber.parse(req.body);
-    await getSubscriberOrThrow(db, id);
-    return db
-      .updateTable("subscribers")
-      .set({
-        ...(body.name !== undefined ? { name: body.name } : {}),
-        ...(body.attribs ? { attribs: body.attribs } : {}),
-      })
-      .where("id", "=", id)
-      .returningAll()
-      .executeTakeFirstOrThrow();
-  });
+  app.patch(
+    "/api/v1/subscribers/:id",
+    { preHandler: app.requirePermission("subscribers:manage") },
+    async (req) => {
+      const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
+      const body = UpdateSubscriber.parse(req.body);
+      await getSubscriberOrThrow(db, id);
+      return db
+        .updateTable("subscribers")
+        .set({
+          ...(body.name !== undefined ? { name: body.name } : {}),
+          ...(body.attribs ? { attribs: body.attribs } : {}),
+        })
+        .where("id", "=", id)
+        .returningAll()
+        .executeTakeFirstOrThrow();
+    },
+  );
 
-  app.delete("/api/v1/subscribers/:id", async (req) => {
-    const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
-    await db.deleteFrom("subscribers").where("id", "=", id).execute();
-    return { ok: true };
-  });
+  app.delete(
+    "/api/v1/subscribers/:id",
+    { preHandler: app.requirePermission("subscribers:manage") },
+    async (req) => {
+      const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
+      await db.deleteFrom("subscribers").where("id", "=", id).execute();
+      return { ok: true };
+    },
+  );
 
-  app.post("/api/v1/subscribers/:id/blocklist", async (req) => {
-    const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
-    await blocklistSubscriber(db, id);
-    return { ok: true };
-  });
+  app.post(
+    "/api/v1/subscribers/:id/blocklist",
+    { preHandler: app.requirePermission("subscribers:manage") },
+    async (req) => {
+      const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
+      await blocklistSubscriber(db, id);
+      return { ok: true };
+    },
+  );
 
-  app.post("/api/v1/subscribers/:id/unblocklist", async (req) => {
-    const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
-    await unblocklistSubscriber(db, id);
-    return { ok: true };
-  });
+  app.post(
+    "/api/v1/subscribers/:id/unblocklist",
+    { preHandler: app.requirePermission("subscribers:manage") },
+    async (req) => {
+      const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
+      await unblocklistSubscriber(db, id);
+      return { ok: true };
+    },
+  );
 
-  app.put("/api/v1/subscribers/:id/lists/:listId", async (req) => {
-    const { id, listId } = z
-      .object({ id: z.coerce.number(), listId: z.coerce.number() })
-      .parse(req.params);
-    const { status } = z
-      .object({ status: z.enum(["unconfirmed", "confirmed"]).optional() })
-      .parse(req.body ?? {});
-    await addToList(db, id, listId, status);
-    return { ok: true };
-  });
+  app.put(
+    "/api/v1/subscribers/:id/lists/:listId",
+    { preHandler: app.requirePermission("subscribers:manage") },
+    async (req) => {
+      const { id, listId } = z
+        .object({ id: z.coerce.number(), listId: z.coerce.number() })
+        .parse(req.params);
+      const { status } = z
+        .object({ status: z.enum(["unconfirmed", "confirmed"]).optional() })
+        .parse(req.body ?? {});
+      await addToList(db, id, listId, status);
+      return { ok: true };
+    },
+  );
 
-  app.delete("/api/v1/subscribers/:id/lists/:listId", async (req) => {
-    const { id, listId } = z
-      .object({ id: z.coerce.number(), listId: z.coerce.number() })
-      .parse(req.params);
-    await removeFromList(db, id, listId);
-    return { ok: true };
-  });
+  app.delete(
+    "/api/v1/subscribers/:id/lists/:listId",
+    { preHandler: app.requirePermission("subscribers:manage") },
+    async (req) => {
+      const { id, listId } = z
+        .object({ id: z.coerce.number(), listId: z.coerce.number() })
+        .parse(req.params);
+      await removeFromList(db, id, listId);
+      return { ok: true };
+    },
+  );
 
-  app.put("/api/v1/subscribers/:id/tags/:tag", async (req) => {
-    const { id, tag } = z.object({ id: z.coerce.number(), tag: z.string() }).parse(req.params);
-    await addTag(db, id, tag);
-    return { ok: true };
-  });
+  app.put(
+    "/api/v1/subscribers/:id/tags/:tag",
+    { preHandler: app.requirePermission("subscribers:manage") },
+    async (req) => {
+      const { id, tag } = z.object({ id: z.coerce.number(), tag: z.string() }).parse(req.params);
+      await addTag(db, id, tag);
+      return { ok: true };
+    },
+  );
 
-  app.delete("/api/v1/subscribers/:id/tags/:tag", async (req) => {
-    const { id, tag } = z.object({ id: z.coerce.number(), tag: z.string() }).parse(req.params);
-    await removeTag(db, id, tag);
-    return { ok: true };
-  });
+  app.delete(
+    "/api/v1/subscribers/:id/tags/:tag",
+    { preHandler: app.requirePermission("subscribers:manage") },
+    async (req) => {
+      const { id, tag } = z.object({ id: z.coerce.number(), tag: z.string() }).parse(req.params);
+      await removeTag(db, id, tag);
+      return { ok: true };
+    },
+  );
 
   const ImportBody = z.object({
     mode: z.enum(["subscribe", "blocklist"]).default("subscribe"),
@@ -251,73 +295,85 @@ export default async function subscriberRoutes(app: FastifyInstance, opts: { db:
     ),
   });
 
-  app.post("/api/v1/subscribers/import", async (req) => {
-    const body = ImportBody.parse(req.body);
+  app.post(
+    "/api/v1/subscribers/import",
+    { preHandler: app.requirePermission("subscribers:import") },
+    async (req) => {
+      const body = ImportBody.parse(req.body);
 
-    let imported = 0;
-    for (const s of body.subscribers) {
-      const existing = await db
-        .selectFrom("subscribers")
-        .select("id")
-        .where("email", "=", s.email)
-        .executeTakeFirst();
+      let imported = 0;
+      for (const s of body.subscribers) {
+        const existing = await db
+          .selectFrom("subscribers")
+          .select("id")
+          .where("email", "=", s.email)
+          .executeTakeFirst();
 
-      let subscriberId: number;
-      if (existing) {
-        subscriberId = existing.id;
-        if (body.overwrite_user_info) {
-          await db
-            .updateTable("subscribers")
-            .set({
-              ...(s.name !== undefined ? { name: s.name } : {}),
-              ...(s.attribs ? { attribs: s.attribs } : {}),
-            })
-            .where("id", "=", subscriberId)
-            .execute();
+        let subscriberId: number;
+        if (existing) {
+          subscriberId = existing.id;
+          if (body.overwrite_user_info) {
+            await db
+              .updateTable("subscribers")
+              .set({
+                ...(s.name !== undefined ? { name: s.name } : {}),
+                ...(s.attribs ? { attribs: s.attribs } : {}),
+              })
+              .where("id", "=", subscriberId)
+              .execute();
+          }
+        } else {
+          // Goes through the service so an imported contact fires
+          // `contact_created` like any other -- a large import therefore enrolls
+          // every new contact, which is intended (see docs/plan/automations_v2.md).
+          const row = await createSubscriber(db, {
+            email: s.email,
+            name: s.name ?? "",
+            attribs: s.attribs,
+          });
+          subscriberId = row.id;
         }
-      } else {
-        // Goes through the service so an imported contact fires
-        // `contact_created` like any other -- a large import therefore enrolls
-        // every new contact, which is intended (see docs/plan/automations_v2.md).
-        const row = await createSubscriber(db, {
-          email: s.email,
-          name: s.name ?? "",
-          attribs: s.attribs,
-        });
-        subscriberId = row.id;
-      }
 
-      if (body.mode === "blocklist") {
-        await blocklistSubscriber(db, subscriberId);
-      } else {
-        for (const listId of body.list_ids) {
-          await addToListForImport(
-            db,
-            subscriberId,
-            listId,
-            body.status,
-            body.overwrite_subscription_status,
-          );
+        if (body.mode === "blocklist") {
+          await blocklistSubscriber(db, subscriberId);
+        } else {
+          for (const listId of body.list_ids) {
+            await addToListForImport(
+              db,
+              subscriberId,
+              listId,
+              body.status,
+              body.overwrite_subscription_status,
+            );
+          }
         }
+        imported++;
       }
-      imported++;
-    }
-    return { imported };
-  });
+      return { imported };
+    },
+  );
 
   // --- Bulk endpoints ---
 
-  app.post("/api/v1/subscribers/bulk/blocklist", async (req) => {
-    const selector = BulkSelector.parse(req.body);
-    const affected = await bulkBlocklist(db, selector);
-    return { affected };
-  });
+  app.post(
+    "/api/v1/subscribers/bulk/blocklist",
+    { preHandler: app.requirePermission("subscribers:manage") },
+    async (req) => {
+      const selector = BulkSelector.parse(req.body);
+      const affected = await bulkBlocklist(db, selector);
+      return { affected };
+    },
+  );
 
-  app.post("/api/v1/subscribers/bulk/delete", async (req) => {
-    const selector = BulkSelector.parse(req.body);
-    const affected = await bulkDelete(db, selector);
-    return { affected };
-  });
+  app.post(
+    "/api/v1/subscribers/bulk/delete",
+    { preHandler: app.requirePermission("subscribers:manage") },
+    async (req) => {
+      const selector = BulkSelector.parse(req.body);
+      const affected = await bulkDelete(db, selector);
+      return { affected };
+    },
+  );
 
   const BulkListsBody = z
     .object({
@@ -339,22 +395,30 @@ export default async function subscriberRoutes(app: FastifyInstance, opts: { db:
       }
     });
 
-  app.post("/api/v1/subscribers/bulk/lists", async (req) => {
-    const body = BulkListsBody.parse(req.body);
-    const selector: { ids: number[] } | { query: SubscriberFilter; all: true } =
-      "ids" in body ? { ids: body.ids } : { query: body.query, all: true };
-    const affected = await bulkLists(db, selector, body.list_ids, body.action, {
-      status: body.status,
-      triggerAutomations: body.trigger_automations,
-    });
-    return { affected };
-  });
+  app.post(
+    "/api/v1/subscribers/bulk/lists",
+    { preHandler: app.requirePermission("subscribers:manage") },
+    async (req) => {
+      const body = BulkListsBody.parse(req.body);
+      const selector: { ids: number[] } | { query: SubscriberFilter; all: true } =
+        "ids" in body ? { ids: body.ids } : { query: body.query, all: true };
+      const affected = await bulkLists(db, selector, body.list_ids, body.action, {
+        status: body.status,
+        triggerAutomations: body.trigger_automations,
+      });
+      return { affected };
+    },
+  );
 
-  app.post("/api/v1/subscribers/export", async (req, reply) => {
-    const selector = BulkSelector.parse(req.body);
-    const csv = await exportSubscribers(db, selector);
-    reply.header("content-type", "text/csv");
-    reply.header("content-disposition", 'attachment; filename="subscribers.csv"');
-    return reply.send(csv);
-  });
+  app.post(
+    "/api/v1/subscribers/export",
+    { preHandler: app.requirePermission("subscribers:get") },
+    async (req, reply) => {
+      const selector = BulkSelector.parse(req.body);
+      const csv = await exportSubscribers(db, selector);
+      reply.header("content-type", "text/csv");
+      reply.header("content-disposition", 'attachment; filename="subscribers.csv"');
+      return reply.send(csv);
+    },
+  );
 }

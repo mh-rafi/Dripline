@@ -8,7 +8,8 @@ Tasks:
 - CRUD API for subscribers and lists (create/list/update/delete, bulk import).
 - Subscriber attributes (JSONB), tags.
 - Single/double opt-in flow for lists.
-- Public API auth (API keys).
+- Public API auth (API keys) -- superseded, see
+  [../roles_and_permissions.md](../roles_and_permissions.md).
 - Basic template model (store + render, no builder UI yet).
 
 **Exit criteria:** create a list, import subscribers via API and via CSV, subscribe/confirm

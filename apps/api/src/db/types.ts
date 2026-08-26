@@ -48,22 +48,33 @@ export interface TemplatesTable {
   updated_at: Generated<Timestamp>;
 }
 
+export type UserType = "user" | "api";
+export type UserStatus = "enabled" | "disabled";
+
 export interface UsersTable {
   id: Generated<number>;
-  email: string;
-  password_hash: string;
+  email: string | null;
+  password_hash: string | null;
   name: Generated<string>;
+  type: Generated<UserType>;
+  role_id: number;
+  status: Generated<UserStatus>;
+  api_key_prefix: string | null;
+  api_key_hash: string | null;
+  last_used_at: Timestamp | null;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
 }
 
-export interface ApiKeysTable {
+export type RoleType = "user";
+
+export interface RolesTable {
   id: Generated<number>;
+  type: Generated<RoleType>;
   name: string;
-  key_prefix: string;
-  key_hash: string;
-  last_used_at: Timestamp | null;
+  permissions: Generated<string[]>;
   created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
 }
 
 export type ConnectionType = "smtp" | "ses";
@@ -320,7 +331,7 @@ export interface Database {
   subscriber_lists: SubscriberListsTable;
   templates: TemplatesTable;
   users: UsersTable;
-  api_keys: ApiKeysTable;
+  roles: RolesTable;
   connections: ConnectionsTable;
   campaigns: CampaignsTable;
   campaign_lists: CampaignListsTable;

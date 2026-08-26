@@ -134,140 +134,172 @@ export default async function automationRoutes(app: FastifyInstance, opts: { db:
 
     /** Trigger/action catalogue, so the builder's picker and the API can never
      * drift on what actually exists. */
-    adminApp.get("/api/v1/automations/registry", async () => ({
-      triggers: TRIGGERS.map(({ type, label, description, group }) => ({
-        type,
-        label,
-        description,
-        group,
-      })),
-      actions: ACTIONS.map(({ type, label, description, group }) => ({
-        type,
-        label,
-        description,
-        group,
-      })),
-    }));
+    adminApp.get(
+      "/api/v1/automations/registry",
+      { preHandler: adminApp.requirePermission("automations:get") },
+      async () => ({
+        triggers: TRIGGERS.map(({ type, label, description, group }) => ({
+          type,
+          label,
+          description,
+          group,
+        })),
+        actions: ACTIONS.map(({ type, label, description, group }) => ({
+          type,
+          label,
+          description,
+          group,
+        })),
+      }),
+    );
 
-    adminApp.get("/api/v1/automations", async () => {
-      const automations = await db
-        .selectFrom("automations")
-        .selectAll()
-        .orderBy("id", "desc")
-        .execute();
+    adminApp.get(
+      "/api/v1/automations",
+      { preHandler: adminApp.requirePermission("automations:get") },
+      async () => {
+        const automations = await db
+          .selectFrom("automations")
+          .selectAll()
+          .orderBy("id", "desc")
+          .execute();
 
-      const counts = await db
-        .selectFrom("automation_enrollments")
-        .select(["automation_id", "status", db.fn.countAll<string>().as("count")])
-        .groupBy(["automation_id", "status"])
-        .execute();
+        const counts = await db
+          .selectFrom("automation_enrollments")
+          .select(["automation_id", "status", db.fn.countAll<string>().as("count")])
+          .groupBy(["automation_id", "status"])
+          .execute();
 
-      return automations.map((automation) => ({
-        ...automation,
-        enrollment_counts: counts
-          .filter((c) => c.automation_id === automation.id)
-          .map(({ status, count }) => ({ status, count })),
-      }));
-    });
+        return automations.map((automation) => ({
+          ...automation,
+          enrollment_counts: counts
+            .filter((c) => c.automation_id === automation.id)
+            .map(({ status, count }) => ({ status, count })),
+        }));
+      },
+    );
 
-    adminApp.get("/api/v1/automations/:id", async (req) => {
-      const { id } = IdParam.parse(req.params);
-      const automation = await getAutomationOrThrow(db, id);
-      const enrollment_counts = await db
-        .selectFrom("automation_enrollments")
-        .select(["status", db.fn.countAll<string>().as("count")])
-        .where("automation_id", "=", id)
-        .groupBy("status")
-        .execute();
-      return { ...automation, enrollment_counts };
-    });
+    adminApp.get(
+      "/api/v1/automations/:id",
+      { preHandler: adminApp.requirePermission("automations:get") },
+      async (req) => {
+        const { id } = IdParam.parse(req.params);
+        const automation = await getAutomationOrThrow(db, id);
+        const enrollment_counts = await db
+          .selectFrom("automation_enrollments")
+          .select(["status", db.fn.countAll<string>().as("count")])
+          .where("automation_id", "=", id)
+          .groupBy("status")
+          .execute();
+        return { ...automation, enrollment_counts };
+      },
+    );
 
-    adminApp.post("/api/v1/automations", async (req, reply) => {
-      const body = CreateAutomation.parse(req.body);
-      const trigger = getTrigger(body.trigger_type);
-      if (!trigger) throw new BadRequestError(`unknown trigger type "${body.trigger_type}"`);
+    adminApp.post(
+      "/api/v1/automations",
+      { preHandler: adminApp.requirePermission("automations:manage") },
+      async (req, reply) => {
+        const body = CreateAutomation.parse(req.body);
+        const trigger = getTrigger(body.trigger_type);
+        if (!trigger) throw new BadRequestError(`unknown trigger type "${body.trigger_type}"`);
 
-      const trigger_config = {
-        ...(trigger.createDefaults?.() ?? {}),
-        ...body.trigger_config,
-      };
+        const trigger_config = {
+          ...(trigger.createDefaults?.() ?? {}),
+          ...body.trigger_config,
+        };
 
-      const automation = await db
-        .insertInto("automations")
-        .values({
-          name: body.name,
-          trigger_type: body.trigger_type,
-          trigger_config,
-          graph: { entry: null, nodes: [] },
-        })
-        .returningAll()
-        .executeTakeFirstOrThrow();
+        const automation = await db
+          .insertInto("automations")
+          .values({
+            name: body.name,
+            trigger_type: body.trigger_type,
+            trigger_config,
+            graph: { entry: null, nodes: [] },
+          })
+          .returningAll()
+          .executeTakeFirstOrThrow();
 
-      reply.code(201);
-      return automation;
-    });
+        reply.code(201);
+        return automation;
+      },
+    );
 
-    adminApp.patch("/api/v1/automations/:id", async (req) => {
-      const { id } = IdParam.parse(req.params);
-      const body = UpdateAutomation.parse(req.body);
-      const existing = await getAutomationOrThrow(db, id);
+    adminApp.patch(
+      "/api/v1/automations/:id",
+      { preHandler: adminApp.requirePermission("automations:manage") },
+      async (req) => {
+        const { id } = IdParam.parse(req.params);
+        const body = UpdateAutomation.parse(req.body);
+        const existing = await getAutomationOrThrow(db, id);
 
-      const graph = body.graph ?? AutomationGraph.parse(existing.graph);
-      if (body.graph) assertStructurallyValid(body.graph);
+        const graph = body.graph ?? AutomationGraph.parse(existing.graph);
+        if (body.graph) assertStructurallyValid(body.graph);
 
-      const trigger_config = body.trigger_config ?? existing.trigger_config;
-      if (body.status === "published") {
-        assertPublishable(graph, existing.trigger_type, trigger_config);
-      }
+        const trigger_config = body.trigger_config ?? existing.trigger_config;
+        if (body.status === "published") {
+          assertPublishable(graph, existing.trigger_type, trigger_config);
+        }
 
-      const automation = await db
-        .updateTable("automations")
-        .set({
-          ...(body.name !== undefined ? { name: body.name } : {}),
-          ...(body.trigger_config !== undefined ? { trigger_config: body.trigger_config } : {}),
-          ...(body.graph !== undefined ? { graph: body.graph } : {}),
-          ...(body.status !== undefined ? { status: body.status } : {}),
-          ...(body.reentry_mode !== undefined ? { reentry_mode: body.reentry_mode } : {}),
-        })
-        .where("id", "=", id)
-        .returningAll()
-        .executeTakeFirst();
-      if (!automation) throw new NotFoundError("automation");
-      return automation;
-    });
+        const automation = await db
+          .updateTable("automations")
+          .set({
+            ...(body.name !== undefined ? { name: body.name } : {}),
+            ...(body.trigger_config !== undefined ? { trigger_config: body.trigger_config } : {}),
+            ...(body.graph !== undefined ? { graph: body.graph } : {}),
+            ...(body.status !== undefined ? { status: body.status } : {}),
+            ...(body.reentry_mode !== undefined ? { reentry_mode: body.reentry_mode } : {}),
+          })
+          .where("id", "=", id)
+          .returningAll()
+          .executeTakeFirst();
+        if (!automation) throw new NotFoundError("automation");
+        return automation;
+      },
+    );
 
-    adminApp.delete("/api/v1/automations/:id", async (req) => {
-      const { id } = IdParam.parse(req.params);
-      await db.deleteFrom("automations").where("id", "=", id).execute();
-      return { ok: true };
-    });
+    adminApp.delete(
+      "/api/v1/automations/:id",
+      { preHandler: adminApp.requirePermission("automations:manage") },
+      async (req) => {
+        const { id } = IdParam.parse(req.params);
+        await db.deleteFrom("automations").where("id", "=", id).execute();
+        return { ok: true };
+      },
+    );
 
-    adminApp.post("/api/v1/automations/:id/enroll", async (req) => {
-      const { id } = IdParam.parse(req.params);
-      const { subscriber_id } = z.object({ subscriber_id: z.number().int() }).parse(req.body);
-      await enroll(db, id, subscriber_id);
-      return { ok: true };
-    });
+    adminApp.post(
+      "/api/v1/automations/:id/enroll",
+      { preHandler: adminApp.requirePermission("automations:manage") },
+      async (req) => {
+        const { id } = IdParam.parse(req.params);
+        const { subscriber_id } = z.object({ subscriber_id: z.number().int() }).parse(req.body);
+        await enroll(db, id, subscriber_id);
+        return { ok: true };
+      },
+    );
 
-    adminApp.get("/api/v1/automations/:id/enrollments", async (req) => {
-      const { id } = IdParam.parse(req.params);
-      return db
-        .selectFrom("automation_enrollments")
-        .innerJoin("subscribers", "subscribers.id", "automation_enrollments.subscriber_id")
-        .select([
-          "automation_enrollments.id",
-          "automation_enrollments.status",
-          "automation_enrollments.current_node_id",
-          "automation_enrollments.next_run_at",
-          "automation_enrollments.started_at",
-          "automation_enrollments.completed_at",
-          "subscribers.id as subscriber_id",
-          "subscribers.email",
-        ])
-        .where("automation_id", "=", id)
-        .orderBy("automation_enrollments.id", "desc")
-        .limit(200)
-        .execute();
-    });
+    adminApp.get(
+      "/api/v1/automations/:id/enrollments",
+      { preHandler: adminApp.requirePermission("automations:get") },
+      async (req) => {
+        const { id } = IdParam.parse(req.params);
+        return db
+          .selectFrom("automation_enrollments")
+          .innerJoin("subscribers", "subscribers.id", "automation_enrollments.subscriber_id")
+          .select([
+            "automation_enrollments.id",
+            "automation_enrollments.status",
+            "automation_enrollments.current_node_id",
+            "automation_enrollments.next_run_at",
+            "automation_enrollments.started_at",
+            "automation_enrollments.completed_at",
+            "subscribers.id as subscriber_id",
+            "subscribers.email",
+          ])
+          .where("automation_id", "=", id)
+          .orderBy("automation_enrollments.id", "desc")
+          .limit(200)
+          .execute();
+      },
+    );
   });
 }

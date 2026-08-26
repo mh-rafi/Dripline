@@ -5,6 +5,10 @@ interface User {
   id: number;
   email: string;
   name: string;
+  type: "user" | "api";
+  role_id: number;
+  role_name: string;
+  status: "enabled" | "disabled";
 }
 
 interface AuthState {

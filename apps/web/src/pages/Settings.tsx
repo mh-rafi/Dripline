@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../lib/api.js";
-import type { ApiKey } from "../lib/types.js";
+import type { Role, User } from "../lib/types.js";
+import Badge from "../components/Badge.js";
 import {
   PageHeaderWrapper,
   BlockLayout,
   Button,
-  Input,
   Table,
   TableHeader,
   TableBody,
@@ -13,117 +14,198 @@ import {
   TableHead,
   TableCell,
   TableEmptyState,
-  Alert,
   Popconfirm,
-  Typography,
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  TabsContent,
   toast,
 } from "../components/ui/index.js";
 
 export default function Settings() {
-  const [keys, setKeys] = useState<ApiKey[]>([]);
-  const [name, setName] = useState("");
-  const [revealed, setRevealed] = useState<string | null>(null);
+  const [users, setUsers] = useState<User[]>([]);
+  const [roles, setRoles] = useState<Role[]>([]);
 
-  function load() {
-    api.get<ApiKey[]>("/api-keys").then(setKeys);
+  function loadUsers() {
+    api.get<User[]>("/users").then(setUsers);
   }
-  useEffect(load, []);
+  function loadRoles() {
+    api.get<Role[]>("/roles").then(setRoles);
+  }
+  useEffect(() => {
+    loadUsers();
+    loadRoles();
+  }, []);
 
-  async function create(e: React.FormEvent) {
-    e.preventDefault();
-    const res = await api.post<ApiKey & { key: string }>("/api-keys", { name });
-    setRevealed(res.key);
-    setName("");
-    load();
+  async function removeUser(id: number) {
+    await api.delete(`/users/${id}`);
+    loadUsers();
+    toast.success("User deleted");
   }
 
-  async function remove(id: number) {
-    await api.delete(`/api-keys/${id}`);
-    load();
-    toast.success("API key revoked");
+  async function removeRole(id: number) {
+    try {
+      await api.delete(`/roles/${id}`);
+      loadRoles();
+      toast.success("Role deleted");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "failed to delete role");
+    }
   }
 
   return (
     <div>
       <PageHeaderWrapper variant="title-only" title="Settings" />
 
-      <BlockLayout>
-        <Typography variant="h3" className="mb-2">
-          API keys
-        </Typography>
-        <Typography variant="muted" className="mb-4">
-          Use an API key to integrate external services with Dripline's HTTP API (create
-          subscribers, trigger webhooks, etc).
-        </Typography>
+      <Tabs defaultValue="users">
+        <TabsList>
+          <TabsTrigger value="users">Users</TabsTrigger>
+          <TabsTrigger value="roles">Roles</TabsTrigger>
+        </TabsList>
 
-        {revealed && (
-          <Alert variant="warning" className="mb-4">
-            <div>
-              <strong>Copy this key now — it won't be shown again:</strong>
-              <pre className="bg-muted mt-2 overflow-auto rounded-md p-2 font-mono text-sm">
-                {revealed}
-              </pre>
-              <Button
-                variant="outline"
-                size="sm"
-                className="mt-2"
-                onClick={() => setRevealed(null)}
-              >
-                Dismiss
+        <TabsContent value="users">
+          <BlockLayout padding="sm">
+            <div className="mb-4 flex items-center justify-between">
+              <p className="text-muted-foreground text-sm">
+                A <strong>user</strong> logs in with email and password. An <strong>API</strong>{" "}
+                user has no email or password — it authenticates with a token, scoped by its role,
+                for integrating external services with Dripline's HTTP API.
+              </p>
+              <Button asChild>
+                <Link to="/settings/users/new">New user</Link>
               </Button>
             </div>
-          </Alert>
-        )}
 
-        <form className="mb-4 flex gap-2" onSubmit={create}>
-          <Input
-            placeholder="Key name, e.g. 'CRM integration'"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="max-w-xs"
-          />
-          <Button type="submit">Generate key</Button>
-        </form>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Role</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Last used</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {users.map((u) => (
+                  <TableRow key={u.id}>
+                    <TableCell>
+                      <Link to={`/settings/users/${u.id}`} className="text-primary hover:underline">
+                        {u.name}
+                      </Link>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {u.email ?? <span>—</span>}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">{u.type}</TableCell>
+                    <TableCell className="text-muted-foreground">{u.role_name}</TableCell>
+                    <TableCell>
+                      <Badge status={u.status} />
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {u.last_used_at ? new Date(u.last_used_at).toLocaleString() : "never"}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-2">
+                        <Button variant="outline" size="sm" asChild>
+                          <Link to={`/settings/users/${u.id}`}>Edit</Link>
+                        </Button>
+                        <Popconfirm
+                          description="Delete this user?"
+                          onConfirm={() => removeUser(u.id)}
+                          confirmText="Delete"
+                        >
+                          <Button variant="outline" size="sm">
+                            Delete
+                          </Button>
+                        </Popconfirm>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+            {users.length === 0 && (
+              <TableEmptyState title="No users yet" description="Add one to get started." />
+            )}
+          </BlockLayout>
+        </TabsContent>
 
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Prefix</TableHead>
-              <TableHead>Last used</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {keys.map((k) => (
-              <TableRow key={k.id}>
-                <TableCell>{k.name}</TableCell>
-                <TableCell className="text-muted-foreground font-mono">{k.key_prefix}</TableCell>
-                <TableCell className="text-muted-foreground">
-                  {k.last_used_at ? new Date(k.last_used_at).toLocaleString() : "never"}
-                </TableCell>
-                <TableCell className="text-right">
-                  <Popconfirm
-                    description="Revoke this API key?"
-                    onConfirm={() => remove(k.id)}
-                    confirmText="Revoke"
-                  >
-                    <Button variant="outline" size="sm">
-                      Revoke
-                    </Button>
-                  </Popconfirm>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-        {keys.length === 0 && (
-          <TableEmptyState
-            title="No API keys yet"
-            description="Generate a key to enable external API access."
-          />
-        )}
-      </BlockLayout>
+        <TabsContent value="roles">
+          <BlockLayout padding="sm">
+            <div className="mb-4 flex items-center justify-between">
+              <p className="text-muted-foreground text-sm">
+                A role is a named set of permissions. Every user is assigned exactly one role.
+              </p>
+              <Button asChild>
+                <Link to="/settings/roles/new">New role</Link>
+              </Button>
+            </div>
+
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Permissions</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {roles.map((r) => {
+                  const isSuperAdmin = r.id === 1;
+                  return (
+                    <TableRow key={r.id}>
+                      <TableCell>
+                        {isSuperAdmin ? (
+                          r.name
+                        ) : (
+                          <Link
+                            to={`/settings/roles/${r.id}`}
+                            className="text-primary hover:underline"
+                          >
+                            {r.name}
+                          </Link>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {isSuperAdmin ? "All permissions" : `${r.permissions.length} granted`}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {isSuperAdmin ? (
+                          <span
+                            className="text-muted-foreground text-sm"
+                            title="The built-in Super Admin role can't be edited or deleted"
+                          >
+                            built-in
+                          </span>
+                        ) : (
+                          <div className="flex justify-end gap-2">
+                            <Button variant="outline" size="sm" asChild>
+                              <Link to={`/settings/roles/${r.id}`}>Edit</Link>
+                            </Button>
+                            <Popconfirm
+                              description="Delete this role?"
+                              onConfirm={() => removeRole(r.id)}
+                              confirmText="Delete"
+                            >
+                              <Button variant="outline" size="sm">
+                                Delete
+                              </Button>
+                            </Popconfirm>
+                          </div>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+            {roles.length === 0 && <TableEmptyState title="No roles" description="" />}
+          </BlockLayout>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

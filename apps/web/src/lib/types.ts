@@ -178,10 +178,33 @@ export interface AutomationEnrollment {
   email: string;
 }
 
-export interface ApiKey {
+export type UserType = "user" | "api";
+export type UserStatus = "enabled" | "disabled";
+
+export interface User {
   id: number;
   name: string;
-  key_prefix: string;
+  email: string | null;
+  type: UserType;
+  role_id: number;
+  role_name: string;
+  status: UserStatus;
+  api_key_prefix: string | null;
   last_used_at: string | null;
   created_at: string;
+  updated_at: string;
+}
+
+/** Only present in the response right after creating/regenerating an API
+ * user's token -- shown to the admin exactly once. */
+export interface UserWithToken extends User {
+  token: string;
+}
+
+export interface Role {
+  id: number;
+  name: string;
+  permissions: string[];
+  created_at: string;
+  updated_at: string;
 }

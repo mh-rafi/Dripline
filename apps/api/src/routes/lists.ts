@@ -15,7 +15,7 @@ export default async function listRoutes(app: FastifyInstance, opts: { db: DB })
   const { db } = opts;
   app.addHook("preHandler", app.requireAuth);
 
-  app.get("/api/v1/lists", async () => {
+  app.get("/api/v1/lists", { preHandler: app.requirePermission("lists:get") }, async () => {
     return db
       .selectFrom("lists")
       .selectAll()
@@ -36,36 +36,52 @@ export default async function listRoutes(app: FastifyInstance, opts: { db: DB })
       .execute();
   });
 
-  app.get("/api/v1/lists/:id", async (req) => {
+  app.get("/api/v1/lists/:id", { preHandler: app.requirePermission("lists:get") }, async (req) => {
     const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
     const list = await db.selectFrom("lists").selectAll().where("id", "=", id).executeTakeFirst();
     if (!list) throw new NotFoundError("list");
     return list;
   });
 
-  app.post("/api/v1/lists", async (req, reply) => {
-    const body = CreateList.parse(req.body);
-    const list = await db.insertInto("lists").values(body).returningAll().executeTakeFirstOrThrow();
-    reply.code(201);
-    return list;
-  });
+  app.post(
+    "/api/v1/lists",
+    { preHandler: app.requirePermission("lists:manage") },
+    async (req, reply) => {
+      const body = CreateList.parse(req.body);
+      const list = await db
+        .insertInto("lists")
+        .values(body)
+        .returningAll()
+        .executeTakeFirstOrThrow();
+      reply.code(201);
+      return list;
+    },
+  );
 
-  app.patch("/api/v1/lists/:id", async (req) => {
-    const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
-    const body = UpdateList.parse(req.body);
-    const list = await db
-      .updateTable("lists")
-      .set(body)
-      .where("id", "=", id)
-      .returningAll()
-      .executeTakeFirst();
-    if (!list) throw new NotFoundError("list");
-    return list;
-  });
+  app.patch(
+    "/api/v1/lists/:id",
+    { preHandler: app.requirePermission("lists:manage") },
+    async (req) => {
+      const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
+      const body = UpdateList.parse(req.body);
+      const list = await db
+        .updateTable("lists")
+        .set(body)
+        .where("id", "=", id)
+        .returningAll()
+        .executeTakeFirst();
+      if (!list) throw new NotFoundError("list");
+      return list;
+    },
+  );
 
-  app.delete("/api/v1/lists/:id", async (req) => {
-    const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
-    await db.deleteFrom("lists").where("id", "=", id).execute();
-    return { ok: true };
-  });
+  app.delete(
+    "/api/v1/lists/:id",
+    { preHandler: app.requirePermission("lists:manage") },
+    async (req) => {
+      const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
+      await db.deleteFrom("lists").where("id", "=", id).execute();
+      return { ok: true };
+    },
+  );
 }

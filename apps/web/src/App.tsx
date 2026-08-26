@@ -17,6 +17,8 @@ import CampaignDetail from "./pages/CampaignDetail.js";
 import Automations from "./pages/Automations.js";
 import AutomationBuilder from "./pages/AutomationBuilder.js";
 import Settings from "./pages/Settings.js";
+import UserForm from "./pages/UserForm.js";
+import RoleForm from "./pages/RoleForm.js";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -56,6 +58,10 @@ export default function App() {
         <Route path="/campaigns/:id" element={<CampaignDetail />} />
         <Route path="/automations" element={<Automations />} />
         <Route path="/settings" element={<Settings />} />
+        <Route path="/settings/users/new" element={<UserForm />} />
+        <Route path="/settings/users/:id" element={<UserForm />} />
+        <Route path="/settings/roles/new" element={<RoleForm />} />
+        <Route path="/settings/roles/:id" element={<RoleForm />} />
       </Route>
       <Route
         path="/automations/:id"

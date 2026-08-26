@@ -106,222 +106,278 @@ export default async function campaignRoutes(
   const { db, config } = opts;
   app.addHook("preHandler", app.requireAuth);
 
-  app.get("/api/v1/campaigns", async () =>
+  app.get("/api/v1/campaigns", { preHandler: app.requirePermission("campaigns:get") }, async () =>
     db.selectFrom("campaigns").selectAll().orderBy("id", "desc").execute(),
   );
 
-  app.get("/api/v1/campaigns/:id", async (req) => {
-    const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
-    const campaign = await getCampaignOrThrow(db, id);
-    const lists = await db
-      .selectFrom("campaign_lists")
-      .innerJoin("lists", "lists.id", "campaign_lists.list_id")
-      .select(["lists.id", "lists.name"])
-      .where("campaign_id", "=", id)
-      .execute();
-    const connections = await db
-      .selectFrom("campaign_connections")
-      .innerJoin("connections", "connections.id", "campaign_connections.connection_id")
-      .select([
-        "connections.id",
-        "connections.name",
-        "connections.from_email",
-        "connections.type",
-        "campaign_connections.priority",
-      ])
-      .where("campaign_connections.campaign_id", "=", id)
-      .orderBy("campaign_connections.priority", "asc")
-      .execute();
-    const progress = await getCampaignProgress(db, id);
-    return { ...campaign, lists, connections, progress };
-  });
-
-  app.post("/api/v1/campaigns", async (req, reply) => {
-    const body = CreateCampaign.parse(req.body);
-    const campaign = await db
-      .insertInto("campaigns")
-      .values({
-        name: body.name,
-        subject: body.subject,
-        body: body.body,
-        body_source: body.body_source ?? null,
-        content_type: body.content_type,
-        from_email: body.from_email ?? null,
-        from_name: body.from_name || null,
-        reply_to: body.reply_to || null,
-        template_id: body.template_id ?? null,
-        send_at: body.send_at ?? null,
-        rate_limit_count: body.rate_limit_count ?? null,
-        rate_limit_duration_seconds: body.rate_limit_duration_seconds ?? null,
-        track_opens: body.track_opens,
-        track_clicks: body.track_clicks,
-        status: body.send_at ? "scheduled" : "draft",
-      })
-      .returningAll()
-      .executeTakeFirstOrThrow();
-
-    if (body.list_ids.length > 0) {
-      await db
-        .insertInto("campaign_lists")
-        .values(body.list_ids.map((list_id) => ({ campaign_id: campaign.id, list_id })))
+  app.get(
+    "/api/v1/campaigns/:id",
+    { preHandler: app.requirePermission("campaigns:get") },
+    async (req) => {
+      const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
+      const campaign = await getCampaignOrThrow(db, id);
+      const lists = await db
+        .selectFrom("campaign_lists")
+        .innerJoin("lists", "lists.id", "campaign_lists.list_id")
+        .select(["lists.id", "lists.name"])
+        .where("campaign_id", "=", id)
         .execute();
-    }
-    if (body.connection_ids.length > 0) {
-      await db
-        .insertInto("campaign_connections")
-        .values(
-          body.connection_ids.map((connection_id, priority) => ({
-            campaign_id: campaign.id,
-            connection_id,
-            priority,
-          })),
-        )
+      const connections = await db
+        .selectFrom("campaign_connections")
+        .innerJoin("connections", "connections.id", "campaign_connections.connection_id")
+        .select([
+          "connections.id",
+          "connections.name",
+          "connections.from_email",
+          "connections.type",
+          "campaign_connections.priority",
+        ])
+        .where("campaign_connections.campaign_id", "=", id)
+        .orderBy("campaign_connections.priority", "asc")
         .execute();
-    }
-    reply.code(201);
-    return campaign;
-  });
+      const progress = await getCampaignProgress(db, id);
+      return { ...campaign, lists, connections, progress };
+    },
+  );
 
-  app.patch("/api/v1/campaigns/:id", async (req) => {
-    const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
-    const body = UpdateCampaign.parse(req.body);
-    const campaign = await db
-      .updateTable("campaigns")
-      // A blank override is stored as NULL, so the send path only has to check
-      // for null rather than for null-or-empty at every use site.
-      .set({
-        ...body,
-        ...(body.from_name !== undefined ? { from_name: body.from_name || null } : {}),
-        ...(body.reply_to !== undefined ? { reply_to: body.reply_to || null } : {}),
-      })
-      .where("id", "=", id)
-      .returningAll()
-      .executeTakeFirst();
-    if (!campaign) throw new NotFoundError("campaign");
-    return campaign;
-  });
+  app.post(
+    "/api/v1/campaigns",
+    { preHandler: app.requirePermission("campaigns:manage") },
+    async (req, reply) => {
+      const body = CreateCampaign.parse(req.body);
+      const campaign = await db
+        .insertInto("campaigns")
+        .values({
+          name: body.name,
+          subject: body.subject,
+          body: body.body,
+          body_source: body.body_source ?? null,
+          content_type: body.content_type,
+          from_email: body.from_email ?? null,
+          from_name: body.from_name || null,
+          reply_to: body.reply_to || null,
+          template_id: body.template_id ?? null,
+          send_at: body.send_at ?? null,
+          rate_limit_count: body.rate_limit_count ?? null,
+          rate_limit_duration_seconds: body.rate_limit_duration_seconds ?? null,
+          track_opens: body.track_opens,
+          track_clicks: body.track_clicks,
+          status: body.send_at ? "scheduled" : "draft",
+        })
+        .returningAll()
+        .executeTakeFirstOrThrow();
 
-  app.put("/api/v1/campaigns/:id/lists", async (req) => {
-    const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
-    const { list_ids } = z.object({ list_ids: z.array(z.number().int()) }).parse(req.body);
-    await db.deleteFrom("campaign_lists").where("campaign_id", "=", id).execute();
-    if (list_ids.length > 0) {
+      if (body.list_ids.length > 0) {
+        await db
+          .insertInto("campaign_lists")
+          .values(body.list_ids.map((list_id) => ({ campaign_id: campaign.id, list_id })))
+          .execute();
+      }
+      if (body.connection_ids.length > 0) {
+        await db
+          .insertInto("campaign_connections")
+          .values(
+            body.connection_ids.map((connection_id, priority) => ({
+              campaign_id: campaign.id,
+              connection_id,
+              priority,
+            })),
+          )
+          .execute();
+      }
+      reply.code(201);
+      return campaign;
+    },
+  );
+
+  app.patch(
+    "/api/v1/campaigns/:id",
+    { preHandler: app.requirePermission("campaigns:manage") },
+    async (req) => {
+      const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
+      const body = UpdateCampaign.parse(req.body);
+      const campaign = await db
+        .updateTable("campaigns")
+        // A blank override is stored as NULL, so the send path only has to check
+        // for null rather than for null-or-empty at every use site.
+        .set({
+          ...body,
+          ...(body.from_name !== undefined ? { from_name: body.from_name || null } : {}),
+          ...(body.reply_to !== undefined ? { reply_to: body.reply_to || null } : {}),
+        })
+        .where("id", "=", id)
+        .returningAll()
+        .executeTakeFirst();
+      if (!campaign) throw new NotFoundError("campaign");
+      return campaign;
+    },
+  );
+
+  app.put(
+    "/api/v1/campaigns/:id/lists",
+    { preHandler: app.requirePermission("campaigns:manage") },
+    async (req) => {
+      const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
+      const { list_ids } = z.object({ list_ids: z.array(z.number().int()) }).parse(req.body);
+      await db.deleteFrom("campaign_lists").where("campaign_id", "=", id).execute();
+      if (list_ids.length > 0) {
+        await db
+          .insertInto("campaign_lists")
+          .values(list_ids.map((list_id) => ({ campaign_id: id, list_id })))
+          .execute();
+      }
+      return { ok: true };
+    },
+  );
+
+  app.put(
+    "/api/v1/campaigns/:id/connections",
+    { preHandler: app.requirePermission("campaigns:manage") },
+    async (req) => {
+      const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
+      const { connection_ids } = z
+        .object({ connection_ids: z.array(z.number().int()) })
+        .parse(req.body);
+      await db.deleteFrom("campaign_connections").where("campaign_id", "=", id).execute();
+      if (connection_ids.length > 0) {
+        await db
+          .insertInto("campaign_connections")
+          .values(
+            connection_ids.map((connection_id, priority) => ({
+              campaign_id: id,
+              connection_id,
+              priority,
+            })),
+          )
+          .execute();
+      }
+      return { ok: true };
+    },
+  );
+
+  app.delete(
+    "/api/v1/campaigns/:id",
+    { preHandler: app.requirePermission("campaigns:manage") },
+    async (req) => {
+      const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
       await db
-        .insertInto("campaign_lists")
-        .values(list_ids.map((list_id) => ({ campaign_id: id, list_id })))
+        .deleteFrom("campaigns")
+        .where("id", "=", id)
+        .where("status", "in", ["draft", "scheduled"])
         .execute();
-    }
-    return { ok: true };
-  });
+      return { ok: true };
+    },
+  );
 
-  app.put("/api/v1/campaigns/:id/connections", async (req) => {
-    const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
-    const { connection_ids } = z
-      .object({ connection_ids: z.array(z.number().int()) })
-      .parse(req.body);
-    await db.deleteFrom("campaign_connections").where("campaign_id", "=", id).execute();
-    if (connection_ids.length > 0) {
-      await db
-        .insertInto("campaign_connections")
-        .values(
-          connection_ids.map((connection_id, priority) => ({
-            campaign_id: id,
-            connection_id,
-            priority,
-          })),
-        )
-        .execute();
-    }
-    return { ok: true };
-  });
+  app.post(
+    "/api/v1/campaigns/:id/duplicate",
+    { preHandler: app.requirePermission("campaigns:manage") },
+    async (req, reply) => {
+      const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
+      const copy = await duplicateCampaign(db, id);
+      reply.code(201);
+      return copy;
+    },
+  );
 
-  app.delete("/api/v1/campaigns/:id", async (req) => {
-    const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
-    await db
-      .deleteFrom("campaigns")
-      .where("id", "=", id)
-      .where("status", "in", ["draft", "scheduled"])
-      .execute();
-    return { ok: true };
-  });
+  app.post(
+    "/api/v1/campaigns/:id/start",
+    { preHandler: app.requirePermission("campaigns:send") },
+    async (req) => {
+      const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
+      return startCampaign(db, id);
+    },
+  );
 
-  app.post("/api/v1/campaigns/:id/duplicate", async (req, reply) => {
-    const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
-    const copy = await duplicateCampaign(db, id);
-    reply.code(201);
-    return copy;
-  });
+  app.post(
+    "/api/v1/campaigns/:id/pause",
+    { preHandler: app.requirePermission("campaigns:send") },
+    async (req) => {
+      const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
+      return pauseCampaign(db, id);
+    },
+  );
 
-  app.post("/api/v1/campaigns/:id/start", async (req) => {
-    const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
-    return startCampaign(db, id);
-  });
+  app.post(
+    "/api/v1/campaigns/:id/cancel",
+    { preHandler: app.requirePermission("campaigns:send") },
+    async (req) => {
+      const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
+      return cancelCampaign(db, id);
+    },
+  );
 
-  app.post("/api/v1/campaigns/:id/pause", async (req) => {
-    const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
-    return pauseCampaign(db, id);
-  });
-
-  app.post("/api/v1/campaigns/:id/cancel", async (req) => {
-    const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
-    return cancelCampaign(db, id);
-  });
-
-  app.post("/api/v1/campaigns/:id/test", async (req) => {
-    const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
-    const body = TestEmail.parse(req.body);
-    const { email, ...overrides } = body;
-    return sendTestEmail(db, config, id, email, {
-      ...overrides,
-      from_name: overrides.from_name || null,
-      reply_to: overrides.reply_to || null,
-    });
-  });
+  app.post(
+    "/api/v1/campaigns/:id/test",
+    { preHandler: app.requirePermission("campaigns:manage") },
+    async (req) => {
+      const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
+      const body = TestEmail.parse(req.body);
+      const { email, ...overrides } = body;
+      return sendTestEmail(db, config, id, email, {
+        ...overrides,
+        from_name: overrides.from_name || null,
+        reply_to: overrides.reply_to || null,
+      });
+    },
+  );
 
   // Unlike /test, works for a never-saved draft (no campaign id, no
   // sending connection required) -- renders the same way a real send would
   // (merge fields, template wrapper, tracking links) against a synthetic
   // subscriber, returning HTML for the UI to display directly.
-  app.post("/api/v1/campaigns/preview", async (req) => {
-    const body = Preview.parse(req.body);
-    return previewCampaign(db, config, body);
-  });
+  app.post(
+    "/api/v1/campaigns/preview",
+    { preHandler: app.requirePermission("campaigns:get") },
+    async (req) => {
+      const body = Preview.parse(req.body);
+      return previewCampaign(db, config, body);
+    },
+  );
 
-  app.get("/api/v1/campaigns/:id/progress", async (req) => {
-    const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
-    return getCampaignProgress(db, id);
-  });
+  app.get(
+    "/api/v1/campaigns/:id/progress",
+    { preHandler: app.requirePermission("campaigns:get") },
+    async (req) => {
+      const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
+      return getCampaignProgress(db, id);
+    },
+  );
 
-  app.get("/api/v1/campaigns/:id/analytics", async (req) => {
-    const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
-    const [opens, uniqueOpens, clicks, uniqueClicks] = await Promise.all([
-      db
-        .selectFrom("campaign_views")
-        .select(db.fn.countAll().as("count"))
-        .where("campaign_id", "=", id)
-        .executeTakeFirst(),
-      db
-        .selectFrom("campaign_views")
-        .select(db.fn.count("subscriber_id").distinct().as("count"))
-        .where("campaign_id", "=", id)
-        .executeTakeFirst(),
-      db
-        .selectFrom("link_clicks")
-        .select(db.fn.countAll().as("count"))
-        .where("campaign_id", "=", id)
-        .executeTakeFirst(),
-      db
-        .selectFrom("link_clicks")
-        .select(db.fn.count("subscriber_id").distinct().as("count"))
-        .where("campaign_id", "=", id)
-        .executeTakeFirst(),
-    ]);
+  app.get(
+    "/api/v1/campaigns/:id/analytics",
+    { preHandler: app.requirePermission("campaigns:get") },
+    async (req) => {
+      const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
+      const [opens, uniqueOpens, clicks, uniqueClicks] = await Promise.all([
+        db
+          .selectFrom("campaign_views")
+          .select(db.fn.countAll().as("count"))
+          .where("campaign_id", "=", id)
+          .executeTakeFirst(),
+        db
+          .selectFrom("campaign_views")
+          .select(db.fn.count("subscriber_id").distinct().as("count"))
+          .where("campaign_id", "=", id)
+          .executeTakeFirst(),
+        db
+          .selectFrom("link_clicks")
+          .select(db.fn.countAll().as("count"))
+          .where("campaign_id", "=", id)
+          .executeTakeFirst(),
+        db
+          .selectFrom("link_clicks")
+          .select(db.fn.count("subscriber_id").distinct().as("count"))
+          .where("campaign_id", "=", id)
+          .executeTakeFirst(),
+      ]);
 
-    return {
-      opens: Number(opens?.count ?? 0),
-      unique_opens: Number(uniqueOpens?.count ?? 0),
-      clicks: Number(clicks?.count ?? 0),
-      unique_clicks: Number(uniqueClicks?.count ?? 0),
-    };
-  });
+      return {
+        opens: Number(opens?.count ?? 0),
+        unique_opens: Number(uniqueOpens?.count ?? 0),
+        clicks: Number(clicks?.count ?? 0),
+        unique_clicks: Number(uniqueClicks?.count ?? 0),
+      };
+    },
+  );
 }

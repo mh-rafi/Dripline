@@ -1,9 +1,16 @@
 # API reference
 
 Base path: `/api/v1`. All endpoints except `/meta`, `/auth/login`, `/auth/setup`,
-and `/track/*` / `/unsubscribe/*` require an `Authorization: Bearer <token>`
-header -- either an admin session JWT (from `/auth/login`) or an API key
-(from **Settings → API keys** in the admin UI, format `dk_xxx_xxx`).
+`/automations/hooks/:key`, and `/track/*` / `/unsubscribe/*` require an
+`Authorization: Bearer <token>` header -- either an admin session JWT (from
+`/auth/login`) or an API user's token (format `dk_xxx_xxx`, created under
+**Settings → Users** in the admin UI, type `api`).
+
+Every user (both types) has a **role** -- a named set of granular
+`resource:verb` permissions (e.g. `campaigns:manage`), managed under
+**Settings → Roles**. A request whose token belongs to a user missing the
+permission a route requires gets `403 { "error": "missing permission: ..." }`.
+The built-in Super Admin role (id `1`) bypasses every check.
 
 Request/response bodies are JSON. Validation errors return `400` with
 `{ "error": "validation failed", "issues": [...] }` (Zod issue format).
@@ -19,14 +26,32 @@ round-trip, and is what the container healthcheck polls.
 
 ## Auth
 
-| Method | Path            | Notes                                                     |
-| ------ | --------------- | --------------------------------------------------------- |
-| POST   | `/auth/setup`   | Creates the first admin user. Fails once any user exists. |
-| POST   | `/auth/login`   | `{ email, password }` → `{ token, user }`                 |
-| GET    | `/auth/me`      | Current admin user (JWT only)                             |
-| GET    | `/api-keys`     | List API keys                                             |
-| POST   | `/api-keys`     | `{ name }` → includes plaintext `key` once                |
-| DELETE | `/api-keys/:id` | Revoke a key                                              |
+| Method | Path          | Notes                                                                        |
+| ------ | ------------- | ---------------------------------------------------------------------------- |
+| POST   | `/auth/setup` | Creates the first user, always as Super Admin. Fails once any user exists.   |
+| POST   | `/auth/login` | `{ email, password }` → `{ token, user }`. `type: "api"` users can't log in. |
+| GET    | `/auth/me`    | Current user's profile (JWT or API token)                                    |
+
+## Users & roles
+
+Requires `users:get`/`users:manage` and `roles:get`/`roles:manage`
+respectively. Deleting or demoting the instance's last enabled Super Admin is
+rejected with `409` to prevent a lockout.
+
+| Method | Path                          | Notes                                                                                                                                                               |
+| ------ | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/users`                      | List users (both types)                                                                                                                                             |
+| GET    | `/users/:id`                  | Single user                                                                                                                                                         |
+| POST   | `/users`                      | `{ type: "user", name, email, password, role_id, status? }` or `{ type: "api", name, role_id, status? }`. An `api` user's response includes plaintext `token` once. |
+| PATCH  | `/users/:id`                  | Same shape as create, all fields optional; blank/omitted `password` leaves it unchanged. `email`/`password` aren't accepted for `api` users.                        |
+| POST   | `/users/:id/regenerate-token` | `api` users only -- issues a new token, invalidating the old one immediately, returned once as `token`.                                                             |
+| DELETE | `/users/:id`                  | —                                                                                                                                                                   |
+| GET    | `/roles`                      | List roles                                                                                                                                                          |
+| GET    | `/roles/permissions`          | The full list of valid permission strings                                                                                                                           |
+| GET    | `/roles/:id`                  | Single role                                                                                                                                                         |
+| POST   | `/roles`                      | `{ name, permissions: string[] }`                                                                                                                                   |
+| PATCH  | `/roles/:id`                  | Same shape, optional fields. The Super Admin role (id `1`) can't be edited.                                                                                         |
+| DELETE | `/roles/:id`                  | The Super Admin role can't be deleted; a role still assigned to a user returns `409`.                                                                               |
 
 ## Subscribers
 
