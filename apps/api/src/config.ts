@@ -20,6 +20,7 @@ export interface Config {
   webDist: string | null;
   bodyLimitBytes: number;
   version: string;
+  logLevel: string;
   sourceUrl: string;
   trustProxy: boolean | number | string;
 }
@@ -101,6 +102,9 @@ export function loadConfig(): Config {
     // front needs a matching limit (see deploy/nginx.conf.example).
     bodyLimitBytes: Number(process.env.BODY_LIMIT_MB ?? 8) * 1024 * 1024,
     version: process.env.APP_VERSION ?? "dev",
+    // "warn" drops the per-request lines, which is worth doing on an install
+    // sending at volume -- every tracking pixel and click is a request.
+    logLevel: process.env.LOG_LEVEL ?? "info",
     // AGPL-3.0 section 13: users interacting with this instance over a
     // network must be offered its corresponding source. An install running
     // modified code has to point this at where that source is published.

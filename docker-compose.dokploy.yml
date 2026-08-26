@@ -32,6 +32,13 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    # Docker's json-file driver keeps every line forever unless capped, so a
+    # long-running install eventually fills the disk with request logs.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   app:
     image: ${DRIPLINE_IMAGE:-ghcr.io/mh-rafi/dripline}:${DRIPLINE_VERSION:-latest}
@@ -43,6 +50,14 @@ services:
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in the environment}
       TRACKING_SECRET: ${TRACKING_SECRET:?set TRACKING_SECRET in the environment}
       TRUST_PROXY: ${TRUST_PROXY:-true}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    # Docker's json-file driver keeps every line forever unless capped, so a
+    # long-running install eventually fills the disk with request logs.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     depends_on:
       postgres:
         condition: service_healthy

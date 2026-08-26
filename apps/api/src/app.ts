@@ -23,7 +23,7 @@ export function buildApp(pool: pg.Pool, db: DB, config: Config): FastifyInstance
   // Fastify's types omit the hop-count form of trustProxy that proxy-addr (and
   // Fastify's own docs) accept, so a numeric TRUST_PROXY needs the cast.
   const app = Fastify({
-    logger: true,
+    logger: { level: config.logLevel },
     trustProxy: config.trustProxy as boolean | string,
     bodyLimit: config.bodyLimitBytes,
   });
@@ -45,7 +45,10 @@ export function buildApp(pool: pg.Pool, db: DB, config: Config): FastifyInstance
     }
   });
 
-  app.get("/health", async () => {
+  // Silent: the container healthcheck polls this every 30s, and two log
+  // lines per poll is ~6k lines a day that say nothing. Failures still
+  // surface through the container's health status.
+  app.get("/health", { logLevel: "silent" }, async () => {
     await pool.query("SELECT 1");
     return { status: "ok" };
   });

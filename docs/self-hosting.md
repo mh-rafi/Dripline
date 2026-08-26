@@ -279,3 +279,21 @@ different `JWT_SECRET`. Sign in again.
 
 **Everything is served but client IPs are all the proxy's** -- set
 `TRUST_PROXY=true`.
+
+**Container logs growing without bound** -- Docker's `json-file` driver keeps
+every line forever unless told otherwise. Both compose files cap each container
+at 3 x 10 MB. If you run the image outside them, pass the same limits:
+
+```bash
+docker run --log-opt max-size=10m --log-opt max-file=3 ...
+```
+
+or set them once for every container on the host in `/etc/docker/daemon.json`:
+
+```json
+{ "log-driver": "json-file", "log-opts": { "max-size": "10m", "max-file": "3" } }
+```
+
+The health endpoint is not logged at all, so an idle install writes nothing.
+For a busy one, `LOG_LEVEL=warn` drops the per-request lines -- every tracking
+pixel and click-through is a request, so a large send is a lot of them.
