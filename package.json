@@ -16,11 +16,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "npm run test --workspaces --if-present",
-    "migrate": "npm run migrate --workspace apps/api",
-    "import:listmonk": "node scripts/import-from-listmonk.mjs"
-  },
-  "dependencies": {
-    "pg": "^8.12.0"
+    "migrate": "npm run migrate --workspace apps/api"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

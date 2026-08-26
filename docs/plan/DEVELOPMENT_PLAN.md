@@ -39,9 +39,10 @@ planned. Phases are built roughly in order; dependencies are noted in each file.
 
 ## Explicitly not done
 
-Public archive pages, load testing at scale, running the listmonk import script against a
-real listmonk database, GrapesJS CSS inlining (uses a `<style>` block instead, which very
-old Outlook versions handle poorly), and committing this repo to git. The container image
+Public archive pages, load testing at scale, GrapesJS CSS inlining (uses a `<style>` block
+instead, which very old Outlook versions handle poorly), and committing this repo to git.
+A listmonk-to-Dripline import script existed briefly but was removed, unused and never run
+against a real listmonk database. The container image
 is built and verified locally but not yet published -- the GHCR release workflow first runs
 on the first `v*.*.*` tag.
 

@@ -228,18 +228,6 @@ after `max_errors` consecutive failures and must be re-enabled by hand.
 Bounce handling is per-connection: either a webhook, or IMAP mailbox scanning
 -- see [mailbox_bounce_scanning.md](plan/mailbox_bounce_scanning.md).
 
-## Migrating from listmonk
-
-[`scripts/import-from-listmonk.mjs`](../scripts/import-from-listmonk.mjs)
-imports subscribers, lists and list memberships straight from a listmonk
-Postgres database. Campaigns and templates are not imported (the script's
-header explains why).
-
-```bash
-LISTMONK_DATABASE_URL=postgres://... DRIPLINE_DATABASE_URL=postgres://... \
-  node scripts/import-from-listmonk.mjs
-```
-
 ## Troubleshooting
 
 **The app exits immediately with "JWT_SECRET must be set..."** -- working as
