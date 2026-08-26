@@ -24,9 +24,15 @@ interface DurationInputProps {
   seconds: number | null | undefined;
   onChange: (seconds: number | null) => void;
   placeholder?: string;
+  disabled?: boolean;
 }
 
-export default function DurationInput({ seconds, onChange, placeholder }: DurationInputProps) {
+export default function DurationInput({
+  seconds,
+  onChange,
+  placeholder,
+  disabled,
+}: DurationInputProps) {
   const initialMult = seconds ? pickUnitMult(seconds) : 60;
   const [unitMult, setUnitMult] = useState(initialMult);
   const [valueStr, setValueStr] = useState(seconds ? String(seconds / initialMult) : "");
@@ -45,6 +51,7 @@ export default function DurationInput({ seconds, onChange, placeholder }: Durati
         min={1}
         value={valueStr}
         placeholder={placeholder}
+        disabled={disabled}
         onChange={(e) => {
           setValueStr(e.target.value);
           emit(e.target.value, unitMult);
@@ -53,6 +60,7 @@ export default function DurationInput({ seconds, onChange, placeholder }: Durati
       />
       <Select
         value={unitValue}
+        disabled={disabled}
         onValueChange={(v) => {
           const next = Number(v);
           setUnitMult(next);
