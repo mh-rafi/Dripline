@@ -36,6 +36,7 @@ interface FormState {
   type: ConnectionType;
   from_email: string;
   from_name: string;
+  reply_to: string;
   host: string;
   port: number;
   tls_mode: TlsMode;
@@ -67,6 +68,7 @@ const EMPTY_FORM: FormState = {
   name: "",
   type: "smtp",
   from_email: "",
+  reply_to: "",
   from_name: "",
   host: "",
   port: 587,
@@ -102,6 +104,7 @@ function formFromConnection(c: Connection): FormState {
     name: c.name,
     type: c.type,
     from_email: c.from_email,
+    reply_to: c.reply_to ?? "",
     from_name: c.from_name,
     host: (cfg.host as string) ?? "",
     port: (cfg.port as number) ?? 587,
@@ -259,6 +262,7 @@ export default function ConnectionForm() {
           name: form.name,
           from_email: form.from_email,
           from_name: form.from_name || undefined,
+          reply_to: form.reply_to || null,
           rate_limit_count,
           rate_limit_duration_seconds,
           list_unsubscribe_header: form.list_unsubscribe_header,
@@ -272,6 +276,7 @@ export default function ConnectionForm() {
           type: form.type,
           from_email: form.from_email,
           from_name: form.from_name || undefined,
+          reply_to: form.reply_to || null,
           rate_limit_count,
           rate_limit_duration_seconds,
           list_unsubscribe_header: form.list_unsubscribe_header,
@@ -345,6 +350,20 @@ export default function ConnectionForm() {
                     value={form.from_name}
                     onChange={(e) => set("from_name", e.target.value)}
                   />
+                </div>
+              </FormRow>
+
+              <FormRow>
+                <div className="space-y-2">
+                  <FormLabel>Reply-To (optional)</FormLabel>
+                  <Input
+                    type="email"
+                    value={form.reply_to}
+                    onChange={(e) => set("reply_to", e.target.value)}
+                  />
+                  <p className="text-muted-foreground text-xs">
+                    Where replies go, if not the From address. A campaign can override it.
+                  </p>
                 </div>
               </FormRow>
 

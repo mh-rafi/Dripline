@@ -20,6 +20,11 @@ export interface SendInput {
   html: string;
   /** Overrides the connection's from_email (e.g. a campaign-level From). */
   fromOverride?: string | null;
+  /** Overrides the display name shown beside the From address. Valid on its
+   * own -- without fromOverride the connection's address is still used. */
+  fromNameOverride?: string | null;
+  /** Overrides the connection's own reply_to for this send. */
+  replyTo?: string | null;
   /** The signed unsubscribe link for this recipient+campaign, if applicable.
    * Used to build the List-Unsubscribe header (see `connection.list_unsubscribe_header`) --
    * not otherwise sent as-is, since it's also embedded in the rendered body. */
@@ -43,6 +48,7 @@ export interface SendMailInput {
   from: string;
   subject: string;
   html: string;
+  replyTo?: string;
   headers?: Record<string, string>;
   /** SMTP envelope MAIL FROM override, independent of the visible `from`
    * header -- only meaningful for SmtpSender; SES has no equivalent here
@@ -87,6 +93,7 @@ class SmtpSender implements ConnectionSender {
       to: input.to,
       subject: input.subject,
       html: input.html,
+      replyTo: input.replyTo,
       headers: input.headers,
       ...(input.envelopeFrom ? { envelope: { from: input.envelopeFrom, to: input.to } } : {}),
     });
@@ -135,6 +142,7 @@ class SesSender implements ConnectionSender {
     const cmd = new SendEmailCommand({
       FromEmailAddress: input.from,
       Destination: { ToAddresses: [input.to] },
+      ReplyToAddresses: input.replyTo ? [input.replyTo] : undefined,
       Content: {
         Simple: {
           Subject: { Data: input.subject },
@@ -194,13 +202,32 @@ export function invalidateSender(connectionId: number): void {
   senderCache.delete(connectionId);
 }
 
-function fromAddress(connection: Connection, override?: string | null): string {
-  // An explicit campaign From overrides the address verbatim (no display name),
-  // since it may belong to a different identity than the connection. Otherwise the
-  // connection's own from_email/from_name is the authorized sending identity.
-  if (override) return override;
-  if (connection.from_name) return `${connection.from_name} <${connection.from_email}>`;
-  return connection.from_email;
+// RFC 5322 allows an unquoted display name only when it is made of atoms; a
+// comma, dot, angle bracket or quote in it has to be quoted or the header
+// parses as several addresses ("Doe, Jane <a@b.c>" becomes two recipients).
+const ATOM_SAFE_NAME = /^[A-Za-z0-9!#$%&'*+/=?^_`{|}~ -]+$/;
+
+function formatAddress(email: string, name?: string | null): string {
+  const display = name?.trim();
+  if (!display) return email;
+  const quoted = ATOM_SAFE_NAME.test(display)
+    ? display
+    : `"${display.replace(/([\\"])/g, "\\$1")}"`;
+  return `${quoted} <${email}>`;
+}
+
+function fromAddress(
+  connection: Connection,
+  override?: string | null,
+  nameOverride?: string | null,
+): string {
+  const email = override || connection.from_email;
+  // An explicit campaign From address may belong to a different identity than
+  // the connection, so the connection's display name is not carried over to it
+  // -- but a campaign-level name is, and applies on its own to the connection's
+  // own address.
+  const name = nameOverride?.trim() ? nameOverride : override ? null : connection.from_name;
+  return formatAddress(email, name);
 }
 
 /** Only the URL form of List-Unsubscribe -- no `mailto:` option, since that
@@ -299,9 +326,10 @@ export async function sendThroughConnection(
   try {
     const { messageId } = await sender.send({
       to: input.to,
-      from: fromAddress(connection, input.fromOverride),
+      from: fromAddress(connection, input.fromOverride, input.fromNameOverride),
       subject: input.subject,
       html: input.html,
+      replyTo: input.replyTo ?? connection.reply_to ?? undefined,
       headers: listUnsubscribeHeaders(connection, input.unsubscribeUrl),
       envelopeFrom: bounceEnvelopeFrom(connection),
     });

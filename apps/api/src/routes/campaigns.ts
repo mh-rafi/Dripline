@@ -25,6 +25,8 @@ const CreateCampaignShape = z.object({
   body_source: z.string().nullish(),
   content_type: ContentType.default("richtext"),
   from_email: z.string().email().optional(),
+  from_name: z.string().optional(),
+  reply_to: z.string().email().optional(),
   template_id: z.number().int().optional(),
   list_ids: z.array(z.number().int()).default([]),
   connection_ids: z.array(z.number().int()).default([]),
@@ -57,6 +59,11 @@ const UpdateCampaign = CreateCampaignShape.partial()
   // sends `null` for "None"/"unlimited"), not just omit the fields.
   .extend({
     template_id: z.number().int().nullable().optional(),
+    from_name: z.string().nullable().optional(),
+    reply_to: z
+      .union([z.string().email(), z.literal("")])
+      .nullable()
+      .optional(),
     rate_limit_count: z.number().int().positive().nullable().optional(),
     rate_limit_duration_seconds: z.number().int().positive().nullable().optional(),
   })
@@ -77,6 +84,10 @@ const TestEmail = z.object({
   body_source: z.string().nullish(),
   content_type: ContentType.optional(),
   from_email: z.string().email().nullish(),
+  // Empty string clears the override; the DB stores null for "not set" so the
+  // send path can tell "no override" from "deliberately blank".
+  from_name: z.string().nullish(),
+  reply_to: z.union([z.string().email(), z.literal("")]).nullish(),
   template_id: z.number().int().nullish(),
 });
 
@@ -136,6 +147,8 @@ export default async function campaignRoutes(
         body_source: body.body_source ?? null,
         content_type: body.content_type,
         from_email: body.from_email ?? null,
+        from_name: body.from_name || null,
+        reply_to: body.reply_to || null,
         template_id: body.template_id ?? null,
         send_at: body.send_at ?? null,
         rate_limit_count: body.rate_limit_count ?? null,
@@ -174,7 +187,13 @@ export default async function campaignRoutes(
     const body = UpdateCampaign.parse(req.body);
     const campaign = await db
       .updateTable("campaigns")
-      .set(body)
+      // A blank override is stored as NULL, so the send path only has to check
+      // for null rather than for null-or-empty at every use site.
+      .set({
+        ...body,
+        ...(body.from_name !== undefined ? { from_name: body.from_name || null } : {}),
+        ...(body.reply_to !== undefined ? { reply_to: body.reply_to || null } : {}),
+      })
       .where("id", "=", id)
       .returningAll()
       .executeTakeFirst();
@@ -252,7 +271,11 @@ export default async function campaignRoutes(
     const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
     const body = TestEmail.parse(req.body);
     const { email, ...overrides } = body;
-    return sendTestEmail(db, config, id, email, overrides);
+    return sendTestEmail(db, config, id, email, {
+      ...overrides,
+      from_name: overrides.from_name || null,
+      reply_to: overrides.reply_to || null,
+    });
   });
 
   // Unlike /test, works for a never-saved draft (no campaign id, no

@@ -73,6 +73,7 @@ export interface Connection {
   type: ConnectionType;
   from_email: string;
   from_name: string;
+  reply_to: string | null;
   rate_limit_count: number | null;
   rate_limit_duration_seconds: number | null;
   enabled: boolean;
@@ -100,6 +101,8 @@ export interface Campaign {
   content_type: ContentType;
   status: CampaignStatus;
   from_email: string | null;
+  from_name: string | null;
+  reply_to: string | null;
   template_id: number | null;
   rate_limit_count: number | null;
   rate_limit_duration_seconds: number | null;

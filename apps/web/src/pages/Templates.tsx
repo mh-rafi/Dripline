@@ -22,47 +22,15 @@ import {
 
 const HtmlEditor = lazy(() => import("../components/content-editor/HtmlEditor.js"));
 
-const DEFAULT_BODY = `<!DOCTYPE html>
+// Starting point for a new template when the seeded default is gone (deleted,
+// or an install that predates seeding). Deliberately minimal -- the real
+// default lives in the database, see apps/api/src/lib/defaultTemplate.ts.
+const FALLBACK_BODY = `<!DOCTYPE html>
 <html>
-<head>
-<meta charset="utf-8">
-<style>
-  body { margin: 0; padding: 0; background: #f4f4f5; }
-  .email-wrapper {
-    max-width: 600px;
-    margin: 0 auto;
-    padding: 32px 24px;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-    color: #2d2d2f;
-    font-size: 16px;
-    line-height: 1.6;
-    background: #ffffff;
-  }
-  .email-wrapper h1, .email-wrapper h2, .email-wrapper h3 {
-    font-weight: 700;
-    color: #111111;
-    line-height: 1.3;
-    margin: 1.2em 0 0.5em;
-  }
-  .email-wrapper h1 { font-size: 1.8em; }
-  .email-wrapper h2 { font-size: 1.5em; }
-  .email-wrapper h3 { font-size: 1.2em; }
-  .email-wrapper p { margin: 1em 0; }
-  .email-wrapper a { color: #f87000; text-decoration: underline; }
-  .email-wrapper hr { border: none; border-top: 1px solid #e5e5e5; margin: 2em 0; }
-  .email-wrapper blockquote {
-    margin: 0 0 1.5em;
-    padding: 10px 20px;
-    border-left: 4px solid #e5e5e5;
-    color: #555555;
-  }
-  .email-wrapper img { max-width: 100%; height: auto; }
-</style>
-</head>
+<head><meta charset="utf-8"></head>
 <body>
-  <div class="email-wrapper">
-    {{ Body }}
-  </div>
+  {{ Body }}
+  <p><a href="{{ UnsubscribeURL }}">Unsubscribe</a></p>
 </body>
 </html>`;
 
@@ -70,7 +38,7 @@ export default function Templates() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [editing, setEditing] = useState<Template | null>(null);
   const [name, setName] = useState("");
-  const [body, setBody] = useState(DEFAULT_BODY);
+  const [body, setBody] = useState("");
   const [preview, setPreview] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -94,9 +62,10 @@ export default function Templates() {
   useEffect(load, []);
 
   function startNew() {
-    setEditing({ id: 0, name: "", subject: "", body: DEFAULT_BODY, is_default: false });
+    const starting = templates.find((t) => t.is_default)?.body ?? FALLBACK_BODY;
+    setEditing({ id: 0, name: "", subject: "", body: starting, is_default: false });
     setName("");
-    setBody(DEFAULT_BODY);
+    setBody(starting);
   }
 
   function startEdit(t: Template) {

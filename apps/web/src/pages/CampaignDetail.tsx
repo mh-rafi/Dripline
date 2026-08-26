@@ -60,6 +60,8 @@ export default function CampaignDetail() {
   const [contentType, setContentType] = useState<ContentType>("richtext");
   const [content, setContent] = useState<ContentValue>({ body: "", body_source: null });
   const [fromEmail, setFromEmail] = useState("");
+  const [fromName, setFromName] = useState("");
+  const [replyTo, setReplyTo] = useState("");
   const [templateId, setTemplateId] = useState("");
   const [listIds, setListIds] = useState<number[]>([]);
   const [connectionIds, setConnectionIds] = useState<number[]>([]);
@@ -113,6 +115,8 @@ export default function CampaignDetail() {
         setContentType(c.content_type);
         setContent({ body: c.body, body_source: c.body_source });
         setFromEmail(c.from_email ?? "");
+        setFromName(c.from_name ?? "");
+        setReplyTo(c.reply_to ?? "");
         setTemplateId(c.template_id ? String(c.template_id) : "");
         setRateLimitCount(c.rate_limit_count ? String(c.rate_limit_count) : "");
         setRateLimitDurationSeconds(c.rate_limit_duration_seconds);
@@ -157,6 +161,8 @@ export default function CampaignDetail() {
     setContentType(campaign.content_type);
     setContent({ body: campaign.body, body_source: campaign.body_source });
     setFromEmail(campaign.from_email ?? "");
+    setFromName(campaign.from_name ?? "");
+    setReplyTo(campaign.reply_to ?? "");
     setTemplateId(campaign.template_id ? String(campaign.template_id) : "");
     setRateLimitCount(campaign.rate_limit_count ? String(campaign.rate_limit_count) : "");
     setRateLimitDurationSeconds(campaign.rate_limit_duration_seconds);
@@ -197,6 +203,8 @@ export default function CampaignDetail() {
         body_source: content.body_source,
         content_type: contentType,
         from_email: fromEmail || undefined,
+        from_name: fromName || null,
+        reply_to: replyTo || null,
         template_id: templateId ? Number(templateId) : null,
         rate_limit_count: rateLimitCount ? Number(rateLimitCount) : null,
         rate_limit_duration_seconds: rateLimitDurationSeconds,
@@ -232,6 +240,8 @@ export default function CampaignDetail() {
           body_source: content.body_source,
           content_type: contentType,
           from_email: fromEmail || null,
+          from_name: fromName || null,
+          reply_to: replyTo || null,
           template_id: templateId ? Number(templateId) : null,
         },
       );
@@ -278,6 +288,17 @@ export default function CampaignDetail() {
                   value={fromEmail}
                   onChange={(e) => setFromEmail(e.target.value)}
                 />
+              </div>
+            </FormRow>
+
+            <FormRow>
+              <div className="space-y-2">
+                <FormLabel>From name (optional override)</FormLabel>
+                <Input value={fromName} onChange={(e) => setFromName(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <FormLabel>Reply-To (optional override)</FormLabel>
+                <Input type="email" value={replyTo} onChange={(e) => setReplyTo(e.target.value)} />
               </div>
             </FormRow>
 

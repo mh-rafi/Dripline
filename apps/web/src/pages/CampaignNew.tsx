@@ -38,6 +38,8 @@ export default function CampaignNew() {
     body_source: null,
   });
   const [fromEmail, setFromEmail] = useState("");
+  const [fromName, setFromName] = useState("");
+  const [replyTo, setReplyTo] = useState("");
   const [templateId, setTemplateId] = useState<string>("");
   const [listIds, setListIds] = useState<number[]>([]);
   const [connectionIds, setConnectionIds] = useState<number[]>([]);
@@ -111,6 +113,8 @@ export default function CampaignNew() {
       body_source: content.body_source,
       content_type: contentType,
       from_email: fromEmail || undefined,
+      from_name: fromName || undefined,
+      reply_to: replyTo || undefined,
       template_id: templateId ? Number(templateId) : undefined,
       list_ids: listIds,
       connection_ids: connectionIds,
@@ -190,6 +194,17 @@ export default function CampaignNew() {
                 value={fromEmail}
                 onChange={(e) => setFromEmail(e.target.value)}
               />
+            </div>
+          </FormRow>
+
+          <FormRow>
+            <div className="space-y-2">
+              <FormLabel>From name (optional override)</FormLabel>
+              <Input value={fromName} onChange={(e) => setFromName(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <FormLabel>Reply-To (optional override)</FormLabel>
+              <Input type="email" value={replyTo} onChange={(e) => setReplyTo(e.target.value)} />
             </div>
           </FormRow>
 

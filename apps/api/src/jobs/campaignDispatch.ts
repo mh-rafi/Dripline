@@ -144,6 +144,8 @@ export function registerCampaignDispatchWorker(
         subject: rendered.subject,
         html: rendered.html,
         fromOverride: campaign.from_email,
+        fromNameOverride: campaign.from_name,
+        replyTo: campaign.reply_to,
         unsubscribeUrl: rendered.unsubscribeUrl,
       });
 

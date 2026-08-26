@@ -55,7 +55,10 @@ docker compose up -d
 ```
 
 That is the whole install. Migrations run automatically inside the container
-before the app starts, so there is no second command.
+before the app starts, so there is no second command. A fresh install is then
+seeded with a default email template (including the unsubscribe footer every
+campaign needs); seeding skips any table that already has rows, so it never
+touches an existing install's data.
 
 Then give it TLS, either with the bundled Caddy:
 

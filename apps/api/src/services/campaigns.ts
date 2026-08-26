@@ -51,6 +51,8 @@ export async function duplicateCampaign(db: DB, id: number) {
       body_source: source.body_source,
       content_type: source.content_type,
       from_email: source.from_email,
+      from_name: source.from_name,
+      reply_to: source.reply_to,
       template_id: source.template_id,
       rate_limit_count: source.rate_limit_count,
       rate_limit_duration_seconds: source.rate_limit_duration_seconds,
@@ -230,6 +232,8 @@ export interface TestEmailOverrides {
   body_source?: string | null;
   content_type?: CampaignContentType;
   from_email?: string | null;
+  from_name?: string | null;
+  reply_to?: string | null;
   template_id?: number | null;
 }
 
@@ -258,6 +262,8 @@ export async function sendTestEmail(
     body_source: overrides.body_source !== undefined ? overrides.body_source : saved.body_source,
     content_type: overrides.content_type ?? saved.content_type,
     from_email: overrides.from_email !== undefined ? overrides.from_email : saved.from_email,
+    from_name: overrides.from_name !== undefined ? overrides.from_name : saved.from_name,
+    reply_to: overrides.reply_to !== undefined ? overrides.reply_to : saved.reply_to,
     template_id: overrides.template_id !== undefined ? overrides.template_id : saved.template_id,
   };
 
@@ -294,6 +300,8 @@ export async function sendTestEmail(
     subject: rendered.subject,
     html: rendered.html,
     fromOverride: campaign.from_email,
+    fromNameOverride: campaign.from_name,
+    replyTo: campaign.reply_to,
     unsubscribeUrl: rendered.unsubscribeUrl,
   });
 

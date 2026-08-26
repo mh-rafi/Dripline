@@ -1,0 +1,4 @@
+- optional from name in campaign
+- optional reply-to field in campaign and conneciton
+- add templates in seed. and run seed on install after migration.
+  - default template, use current template hardcoded in file. just add unsub url at the bottom.

@@ -58,4 +58,12 @@ MSG
     done
 fi
 
+# Seeds a fresh install (currently the default email template). A no-op once
+# the install has data, so it runs on every start like migrations do. Warn
+# rather than exit on failure: nothing here is required for the app to serve,
+# and an upgrade should not crash-loop over an optional convenience row.
+if [ "${RUN_SEED:-true}" != "false" ]; then
+    node dist/seed.js || echo "dripline: seeding failed, continuing" >&2
+fi
+
 exec "$@"

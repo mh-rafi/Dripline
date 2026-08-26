@@ -128,6 +128,9 @@ export interface ConnectionsTable {
   config: ConnectionConfig;
   from_email: string;
   from_name: Generated<string>;
+  /** Default Reply-To for everything this connection sends; a campaign's own
+   * reply_to overrides it. Null leaves the header off entirely. */
+  reply_to: string | null;
   rate_limit_count: number | null;
   rate_limit_duration_seconds: number | null;
   window_start: Timestamp | null;
@@ -168,6 +171,10 @@ export interface CampaignsTable {
   name: string;
   subject: string;
   from_email: string | null;
+  /** Display name only -- valid on its own, in which case the connection's
+   * from_email is still the address. See fromAddress() in services/connections.ts. */
+  from_name: string | null;
+  reply_to: string | null;
   template_id: number | null;
   body: Generated<string>;
   /** Original editor source (markdown text, visual builder JSON, or a mirror

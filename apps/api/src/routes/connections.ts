@@ -118,6 +118,7 @@ const CreateConnection = z
     type: ConnectionTypeSchema,
     from_email: z.string().email(),
     from_name: z.string().optional(),
+    reply_to: z.union([z.string().email(), z.literal("")]).nullish(),
     enabled: z.boolean().default(true),
     max_errors: z.number().int().positive().default(20),
     rate_limit_count: z.number().int().positive().nullish(),
@@ -148,6 +149,7 @@ const UpdateConnection = z.object({
   name: z.string().min(1).optional(),
   from_email: z.string().email().optional(),
   from_name: z.string().optional(),
+  reply_to: z.union([z.string().email(), z.literal("")]).nullish(),
   enabled: z.boolean().optional(),
   max_errors: z.number().int().positive().optional(),
   rate_limit_count: z.number().int().positive().nullish(),
@@ -162,6 +164,7 @@ const TestConnection = z.object({
   config: z.unknown(),
   from_email: z.string().email().optional(),
   from_name: z.string().optional(),
+  reply_to: z.union([z.string().email(), z.literal("")]).nullish(),
 });
 
 type ConnectionRow = {
@@ -171,6 +174,7 @@ type ConnectionRow = {
   config: ConnectionConfig;
   from_email: string;
   from_name: string;
+  reply_to: string | null;
   rate_limit_count: number | null;
   rate_limit_duration_seconds: number | null;
   enabled: boolean;
@@ -279,6 +283,7 @@ export default async function connectionRoutes(app: FastifyInstance, opts: { db:
         type: body.type,
         from_email: body.from_email,
         from_name: body.from_name ?? "",
+        reply_to: body.reply_to || null,
         config,
         enabled: body.enabled,
         max_errors: body.max_errors,
@@ -308,6 +313,7 @@ export default async function connectionRoutes(app: FastifyInstance, opts: { db:
     if (body.name !== undefined) set.name = body.name;
     if (body.from_email !== undefined) set.from_email = body.from_email;
     if (body.from_name !== undefined) set.from_name = body.from_name;
+    if (body.reply_to !== undefined) set.reply_to = body.reply_to || null;
     if (body.enabled !== undefined) set.enabled = body.enabled;
     if (body.max_errors !== undefined) set.max_errors = body.max_errors;
     if (body.rate_limit_count !== undefined) set.rate_limit_count = body.rate_limit_count;

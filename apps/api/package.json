@@ -10,7 +10,8 @@
     "start": "node dist/index.js",
     "test": "vitest run",
     "migrate": "node-pg-migrate up",
-    "migrate:down": "node-pg-migrate down"
+    "migrate:down": "node-pg-migrate down",
+    "seed": "node dist/seed.js"
   },
   "dependencies": {
     "@aws-sdk/client-sesv2": "^3.1117.0",
