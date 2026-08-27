@@ -133,6 +133,19 @@ export interface CampaignProgress {
   total: number;
 }
 
+export type CampaignEmailStatus = "pending" | "queued" | "sent" | "failed" | "skipped";
+
+export interface CampaignEmail {
+  id: string;
+  subscriber_id: number;
+  subscriber_email: string;
+  subscriber_name: string;
+  status: CampaignEmailStatus;
+  sent_at: string | null;
+  opens: number;
+  clicks: number;
+}
+
 export type AutomationStatus = "draft" | "published" | "paused";
 export type AutomationReentryMode = "once" | "multiple";
 

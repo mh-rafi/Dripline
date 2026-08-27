@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { sql } from "kysely";
 import { z } from "zod";
 import type { DB } from "../db/kysely.js";
 import type { Config } from "../config.js";
@@ -91,6 +92,11 @@ const TestEmail = z.object({
   template_id: z.number().int().nullish(),
 });
 
+const EmailsQuery = z.object({
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+
 const Preview = z.object({
   subject: z.string().optional(),
   body: z.string(),
@@ -106,9 +112,32 @@ export default async function campaignRoutes(
   const { db, config } = opts;
   app.addHook("preHandler", app.requireAuth);
 
-  app.get("/api/v1/campaigns", { preHandler: app.requirePermission("campaigns:get") }, async () =>
-    db.selectFrom("campaigns").selectAll().orderBy("id", "desc").execute(),
-  );
+  app.get("/api/v1/campaigns", { preHandler: app.requirePermission("campaigns:get") }, async () => {
+    const campaigns = await db.selectFrom("campaigns").selectAll().orderBy("id", "desc").execute();
+
+    // campaigns.sent/to_send are never updated past campaign creation (the
+    // dispatch job only ever writes per-row campaign_emails.status) -- so,
+    // like getCampaignProgress, these are computed live rather than read
+    // off those stale columns.
+    const counts = await db
+      .selectFrom("campaign_emails")
+      .select(["campaign_id", "status", db.fn.countAll().as("count")])
+      .groupBy(["campaign_id", "status"])
+      .execute();
+    const byCampaign = new Map<number, { sent: number; total: number }>();
+    for (const row of counts) {
+      const entry = byCampaign.get(row.campaign_id) ?? { sent: 0, total: 0 };
+      const count = Number(row.count);
+      entry.total += count;
+      if (row.status === "sent") entry.sent = count;
+      byCampaign.set(row.campaign_id, entry);
+    }
+
+    return campaigns.map((c) => {
+      const counted = byCampaign.get(c.id);
+      return { ...c, sent: counted?.sent ?? 0, to_send: counted?.total ?? 0 };
+    });
+  });
 
   app.get(
     "/api/v1/campaigns/:id",
@@ -378,6 +407,64 @@ export default async function campaignRoutes(
         clicks: Number(clicks?.count ?? 0),
         unique_clicks: Number(uniqueClicks?.count ?? 0),
       };
+    },
+  );
+
+  app.get(
+    "/api/v1/campaigns/:id/emails",
+    { preHandler: app.requirePermission("campaigns:get") },
+    async (req) => {
+      const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
+      const { limit, offset } = EmailsQuery.parse(req.query);
+
+      // Per-subscriber open/click counts, pre-aggregated so the join to
+      // campaign_emails (one row per recipient) doesn't fan out.
+      const opensBySubscriber = db
+        .selectFrom("campaign_views")
+        .select(["subscriber_id", db.fn.countAll().as("count")])
+        .where("campaign_id", "=", id)
+        .groupBy("subscriber_id")
+        .as("opens_by_subscriber");
+      const clicksBySubscriber = db
+        .selectFrom("link_clicks")
+        .select(["subscriber_id", db.fn.countAll().as("count")])
+        .where("campaign_id", "=", id)
+        .groupBy("subscriber_id")
+        .as("clicks_by_subscriber");
+
+      const [emails, totalResult] = await Promise.all([
+        db
+          .selectFrom("campaign_emails")
+          .innerJoin("subscribers", "subscribers.id", "campaign_emails.subscriber_id")
+          .leftJoin(opensBySubscriber, (join) =>
+            join.onRef("opens_by_subscriber.subscriber_id", "=", "campaign_emails.subscriber_id"),
+          )
+          .leftJoin(clicksBySubscriber, (join) =>
+            join.onRef("clicks_by_subscriber.subscriber_id", "=", "campaign_emails.subscriber_id"),
+          )
+          .select([
+            "campaign_emails.id",
+            "campaign_emails.subscriber_id",
+            "subscribers.email as subscriber_email",
+            "subscribers.name as subscriber_name",
+            "campaign_emails.status",
+            "campaign_emails.sent_at",
+            sql<number>`coalesce(opens_by_subscriber.count, 0)`.as("opens"),
+            sql<number>`coalesce(clicks_by_subscriber.count, 0)`.as("clicks"),
+          ])
+          .where("campaign_emails.campaign_id", "=", id)
+          .orderBy("campaign_emails.id", "desc")
+          .limit(limit)
+          .offset(offset)
+          .execute(),
+        db
+          .selectFrom("campaign_emails")
+          .select(db.fn.countAll().as("count"))
+          .where("campaign_id", "=", id)
+          .executeTakeFirstOrThrow(),
+      ]);
+
+      return { emails, total: Number(totalResult.count) };
     },
   );
 }

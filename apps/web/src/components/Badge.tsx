@@ -9,6 +9,8 @@ interface BadgeProps {
 const statusColorMap: Record<string, string> = {
   running: "bg-success/15 text-success border border-success/20",
   active: "bg-success/15 text-success border border-success/20",
+  sent: "bg-success/15 text-success border border-success/20",
+  queued: "bg-warning/15 text-warning border border-warning/20",
   published: "bg-success/15 text-success border border-success/20",
   finished: "bg-primary/15 text-primary border border-primary/20",
   completed: "bg-primary/15 text-primary border border-primary/20",

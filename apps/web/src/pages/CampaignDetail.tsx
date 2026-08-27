@@ -8,6 +8,7 @@ import ProgressBar from "../components/ProgressBar.js";
 import DurationInput from "../components/DurationInput.js";
 import PreviewModal from "../components/PreviewModal.js";
 import EmailHistoryInput from "../components/EmailHistoryInput.js";
+import CampaignEmailsTable from "../components/CampaignEmailsTable.js";
 import ContentTypeEditor, {
   type ContentType,
   type ContentValue,
@@ -350,6 +351,8 @@ export default function CampaignDetail() {
                   </Button>
                 )}
               </div>
+
+              {campaign.status !== "draft" && <CampaignEmailsTable campaignId={campaign.id} />}
             </TabsContent>
 
             <TabsContent value="details" className="space-y-4">
