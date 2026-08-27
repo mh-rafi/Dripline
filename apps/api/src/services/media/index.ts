@@ -149,12 +149,15 @@ export async function uploadMedia(
 
 export async function listMedia(
   db: DB,
-  opts: { query?: string; page: number; perPage: number },
+  opts: { query?: string; type?: "image"; page: number; perPage: number },
 ): Promise<{ results: MediaItem[]; total: number; page: number; per_page: number }> {
   const { store, settings } = await getStoreFor(db);
 
   let base = db.selectFrom("media");
   if (opts.query) base = base.where("filename", "ilike", `%${opts.query}%`);
+  // Filtered in SQL rather than in the caller so the `total` below stays
+  // consistent with the rows -- the editor's image picker paginates on it.
+  if (opts.type === "image") base = base.where("content_type", "like", "image/%");
 
   const { total } = await base
     .select((eb) => eb.fn.countAll<string>().as("total"))

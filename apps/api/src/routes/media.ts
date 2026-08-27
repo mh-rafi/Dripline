@@ -7,6 +7,7 @@ import { getMediaSettings } from "../services/settings.js";
 
 const ListQuery = z.object({
   query: z.string().optional(),
+  type: z.enum(["image"]).optional(),
   page: z.coerce.number().int().positive().default(1),
   per_page: z.coerce.number().int().positive().max(100).default(30),
 });
@@ -16,9 +17,9 @@ export default async function mediaRoutes(app: FastifyInstance, opts: { db: DB }
   app.addHook("preHandler", app.requireAuth);
 
   app.get("/api/v1/media", { preHandler: app.requirePermission("media:get") }, async (req) => {
-    const { query, page, per_page } = ListQuery.parse(req.query);
+    const { query, type, page, per_page } = ListQuery.parse(req.query);
     try {
-      return await listMedia(db, { query, page, perPage: per_page });
+      return await listMedia(db, { query, type, page, perPage: per_page });
     } catch (err) {
       // An instance that hasn't configured S3 yet should still be able to
       // open the media page and be told what's missing.

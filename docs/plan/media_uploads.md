@@ -77,6 +77,7 @@ than a 500, so the media page can point the admin at Settings.
 
 - **Media** (`/media`, sidebar) — grid with thumbnails for images and an icon
   for everything else, multi-file upload, copy-URL, delete, search, pagination.
+- **Image insertion in the rich-text editor** — see below.
 - **Settings → Media** (`MediaSettingsForm.tsx`) — provider, permitted
   extensions (tag input, `*` allows everything), max upload size, and the S3
   fields, matching listmonk's settings screen field for field. **Test
@@ -87,9 +88,48 @@ The stored secret comes back masked (`••••••••`) and sending the
 unchanged keeps it — the same contract as the masked connection credentials, so
 the admin UI never holds the real key.
 
+## Inserting images in the rich-text editor
+
+The toolbar's image button no longer asks for a URL. It drops an
+`imagePlaceholder` node into the document — a dashed box the author fills in
+one of four ways: **Upload**, **Media library** (the picker dialog), dropping a
+file straight onto the box, or a URL typed into the box's fallback field (which
+is what keeps external images possible now that the URL popover is gone).
+Whichever path resolves it, the box is replaced by an ordinary
+`@tiptap/extension-image` node in a single transaction, so one undo takes back
+the whole insertion.
+
+`MediaPickerDialog` is deliberately standalone rather than part of the editor:
+it is the reusable "choose a file" surface, and takes `imagesOnly` to filter the
+listing **server-side** (`GET /media?type=image`) so its pagination totals stay
+consistent with the rows it shows.
+
+Two things here are less obvious than they look:
+
+- **Placeholders must never reach the saved body.** An author can insert one,
+  leave it empty and save. `stripPlaceholders()` in `RichTextEditor` removes
+  them from the HTML handed to `onChange` — and because the parent's `value` is
+  therefore always stripped, the "sync `value` back into the editor" effect has
+  to compare against the _stripped_ HTML too. Comparing against the raw
+  `getHTML()` makes every insert look like an external change, which resets the
+  document and destroys the placeholder the author just added.
+- **The command inserts after the selection, not over it.** `insertContent()`
+  replaces the current selection, and inserting an image leaves that image
+  node-selected — so clicking the toolbar button twice in a row silently
+  destroyed the first image. It uses `insertContentAt(selection.to, …)` instead.
+
 ## Verified
 
-Against MinIO on a throwaway bucket: save/read-back with the secret masked and
+The editor flow, in a browser against MinIO: the toolbar button inserting a box;
+resolving it from the media library, from a dropped file (uploaded to S3 and
+fetchable from the bucket afterwards), and from a pasted URL; the picker
+excluding non-images from both its rows and its total; a dropped `.txt` rejected
+with a toast and the box left in place to retry; the remove button clearing the
+box without touching surrounding images; an unfilled box surviving in the editor
+but absent from the saved body; and a second insert no longer clobbering the
+image from the first.
+
+The storage layer, against MinIO on a throwaway bucket: save/read-back with the secret masked and
 preserved; test-connection success and each failure mode (missing bucket,
 wrong secret, unreachable endpoint, all with mapped messages rather than S3's
 bare `UnknownError`); upload with a messy filename (`My Logo (v2).svg` →
@@ -107,9 +147,12 @@ both fetching `200`; and the unconfigured-store and unauthenticated paths.
   library of large images. Adding them means an image-processing dependency
   (listmonk uses `disintegration/imaging`; `sharp` is the Node equivalent) —
   deliberately deferred rather than pulled in for a first pass.
-- **Picking media from the content editors.** The library exists and exposes
-  URLs, but the rich-text/HTML editors still take an image URL by hand. A picker
-  dialog reusing the media grid is the obvious next step.
+- **Picking media from the _other_ editors.** The rich-text editor has the
+  placeholder box and picker; the raw-HTML, Markdown and GrapesJS visual editors
+  still take an image URL by hand. `MediaPickerDialog` is reusable for those.
+- **Pasting or dropping an image directly into the editor body** (outside the
+  placeholder box) still does nothing — it would need an editor-level paste/drop
+  handler that uploads and inserts in one step.
 - **Image dimensions.** `media.meta` is in place for `{ width, height }` and is
   currently always `{}` — it needs the same image-decoding dependency as
   thumbnails.

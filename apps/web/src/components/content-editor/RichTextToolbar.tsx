@@ -138,55 +138,13 @@ function LinkControl({ editor, active }: { editor: Editor; active: boolean }) {
 }
 
 function ImageControl({ editor }: { editor: Editor }) {
-  const [url, setUrl] = useState("");
-  const [alt, setAlt] = useState("");
-
   return (
-    <Dropdown
-      onOpenChange={(open) => {
-        if (open) {
-          setUrl("");
-          setAlt("");
-        }
-      }}
+    <ToolbarButton
+      tooltip="Image"
+      onClick={() => editor.chain().focus().insertImagePlaceholder().run()}
     >
-      <DropdownTrigger asChild>
-        <ToolbarButton tooltip="Image">
-          <ImageIcon className="h-4 w-4" />
-        </ToolbarButton>
-      </DropdownTrigger>
-      <DropdownContent align="start" size="auto" className="w-72 space-y-2 p-2">
-        <Input
-          autoFocus
-          placeholder="Image URL"
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-        />
-        <Input
-          placeholder="Alt text (optional)"
-          value={alt}
-          onChange={(e) => setAlt(e.target.value)}
-        />
-        <div className="flex justify-end">
-          <PopoverPrimitive.Close asChild>
-            <Button
-              type="button"
-              size="sm"
-              disabled={!url.trim()}
-              onClick={() =>
-                editor
-                  .chain()
-                  .focus()
-                  .setImage({ src: url.trim(), alt: alt.trim() || undefined })
-                  .run()
-              }
-            >
-              Insert
-            </Button>
-          </PopoverPrimitive.Close>
-        </div>
-      </DropdownContent>
-    </Dropdown>
+      <ImageIcon className="h-4 w-4" />
+    </ToolbarButton>
   );
 }
 

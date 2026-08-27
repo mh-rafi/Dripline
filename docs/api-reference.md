@@ -203,11 +203,11 @@ pausing holds contacts in place rather than dropping them.
 Requires `media:get`/`media:manage`. Files live in the configured S3 store; the
 `media` table only holds the row that points at them.
 
-| Method | Path         | Notes                                                                          |
-| ------ | ------------ | ------------------------------------------------------------------------------ |
-| GET    | `/media`     | `?query=&page=&per_page=` → `{ results, total, page, per_page }`               |
-| POST   | `/media`     | `multipart/form-data` with a single `file` field. `201` with the created item. |
-| DELETE | `/media/:id` | Removes the row and the object from the bucket                                 |
+| Method | Path         | Notes                                                                                                                                  |
+| ------ | ------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/media`     | `?query=&type=&page=&per_page=` → `{ results, total, page, per_page }`. `type=image` restricts the rows **and the total** to `image/*` |
+| POST   | `/media`     | `multipart/form-data` with a single `file` field. `201` with the created item.                                                         |
+| DELETE | `/media/:id` | Removes the row and the object from the bucket                                                                                         |
 
 Each item is `{ id, uuid, provider, filename, content_type, size, meta,
 created_at, url }`. **`url` is resolved on every read** -- a private bucket

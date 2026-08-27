@@ -6,6 +6,7 @@ import TextAlign from "@tiptap/extension-text-align";
 import Image from "@tiptap/extension-image";
 import { TableKit } from "@tiptap/extension-table";
 import { Placeholder } from "@tiptap/extensions";
+import { ImagePlaceholder, IMAGE_PLACEHOLDER_ATTR } from "./ImagePlaceholder.js";
 import RichTextToolbar from "./RichTextToolbar.js";
 import { Skeleton } from "../ui/index.js";
 
@@ -48,6 +49,7 @@ function createExtensions() {
     TextStyleKit.configure({ fontFamily: false, fontSize: false, lineHeight: false }),
     TextAlign.configure({ types: ["heading", "paragraph"] }),
     Image,
+    ImagePlaceholder,
     TableKit.configure({ table: { resizable: false } }),
     Placeholder.configure({ placeholder: "Write your email…" }),
   ];
@@ -56,6 +58,19 @@ function createExtensions() {
 const EDITOR_PROPS = {
   attributes: { class: CONTENT_CLASS },
 };
+
+/** Empty image placeholders are editing scaffolding, never content: an author
+ * can insert one, leave it unfilled and save. Dropping them here means the
+ * campaign body never carries a stray box, and -- because the parent's `value`
+ * is always stripped -- the sync effect below has to compare against the
+ * stripped HTML too, or every insert would immediately reset the document and
+ * destroy the placeholder the author just added. */
+function stripPlaceholders(html: string): string {
+  if (!html.includes(IMAGE_PLACEHOLDER_ATTR)) return html;
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  doc.body.querySelectorAll(`[${IMAGE_PLACEHOLDER_ATTR}]`).forEach((el) => el.remove());
+  return doc.body.innerHTML;
+}
 
 export default function RichTextEditor({ value, onChange }: RichTextEditorProps) {
   const extensions = useMemo(createExtensions, []);
@@ -69,7 +84,7 @@ export default function RichTextEditor({ value, onChange }: RichTextEditorProps)
     immediatelyRender: false,
     extensions,
     content: value,
-    onUpdate: ({ editor }) => onChange(editor.getHTML()),
+    onUpdate: ({ editor }) => onChange(stripPlaceholders(editor.getHTML())),
     editorProps: EDITOR_PROPS,
   });
 
@@ -79,7 +94,7 @@ export default function RichTextEditor({ value, onChange }: RichTextEditorProps)
   // without fighting the user's own typing.
   useEffect(() => {
     if (!editor) return;
-    if (value !== editor.getHTML()) {
+    if (value !== stripPlaceholders(editor.getHTML())) {
       editor.commands.setContent(value, { emitUpdate: false });
     }
   }, [value, editor]);
