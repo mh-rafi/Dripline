@@ -51,6 +51,23 @@ export const api = {
   put: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "PUT", body: JSON.stringify(body) }),
   delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
+  // Multipart uploads deliberately bypass request()'s JSON handling: the
+  // browser has to set its own multipart boundary on content-type.
+  upload: async <T>(path: string, file: File): Promise<T> => {
+    const token = getToken();
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch(`/api/v1${path}`, {
+      method: "POST",
+      headers: token ? { authorization: `Bearer ${token}` } : {},
+      body: form,
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({ error: res.statusText }));
+      throw new ApiError(res.status, body.error ?? "upload failed");
+    }
+    return res.json() as Promise<T>;
+  },
   downloadBlob: async (path: string, body: unknown) => {
     const token = getToken();
     const res = await fetch(`/api/v1${path}`, {

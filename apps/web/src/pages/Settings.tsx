@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { api } from "../lib/api.js";
 import type { Role, User } from "../lib/types.js";
 import Badge from "../components/Badge.js";
+import MediaSettingsForm from "../components/MediaSettingsForm.js";
 import {
   PageHeaderWrapper,
   BlockLayout,
@@ -61,6 +62,7 @@ export default function Settings() {
         <TabsList>
           <TabsTrigger value="users">Users</TabsTrigger>
           <TabsTrigger value="roles">Roles</TabsTrigger>
+          <TabsTrigger value="media">Media</TabsTrigger>
         </TabsList>
 
         <TabsContent value="users">
@@ -203,6 +205,18 @@ export default function Settings() {
               </TableBody>
             </Table>
             {roles.length === 0 && <TableEmptyState title="No roles" description="" />}
+          </BlockLayout>
+        </TabsContent>
+        <TabsContent value="media">
+          <BlockLayout padding="sm">
+            <p className="text-muted-foreground mb-6 text-sm">
+              Where uploaded files are stored, and what may be uploaded. Files appear in the{" "}
+              <Link to="/media" className="text-primary hover:underline">
+                Media
+              </Link>{" "}
+              library.
+            </p>
+            <MediaSettingsForm />
           </BlockLayout>
         </TabsContent>
       </Tabs>

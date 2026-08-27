@@ -198,6 +198,68 @@ pausing holds contacts in place rather than dropping them.
 | POST   | `/automations/hooks/:key` | **Unauthenticated** -- the per-automation `key` is the credential. `{ email? \| subscriber_id?, name?, attribs?, ...payload }`. Creates the contact if `email` is unknown, then enrols them in the `webhook_incoming` automation owning that key. |
 | POST   | `/bounces`                | `{ email, campaign_uuid?, type: "hard"\|"soft"\|"complaint", source?, meta? }`. Auto-blocklists per threshold.                                                                                                                                    |
 
+## Media
+
+Requires `media:get`/`media:manage`. Files live in the configured S3 store; the
+`media` table only holds the row that points at them.
+
+| Method | Path         | Notes                                                                          |
+| ------ | ------------ | ------------------------------------------------------------------------------ |
+| GET    | `/media`     | `?query=&page=&per_page=` → `{ results, total, page, per_page }`               |
+| POST   | `/media`     | `multipart/form-data` with a single `file` field. `201` with the created item. |
+| DELETE | `/media/:id` | Removes the row and the object from the bucket                                 |
+
+Each item is `{ id, uuid, provider, filename, content_type, size, meta,
+created_at, url }`. **`url` is resolved on every read** -- a private bucket
+returns a pre-signed URL that expires, so it must not be cached or persisted.
+`filename` is the object key _without_ the configured bucket path prefix, so
+changing that prefix doesn't orphan existing rows.
+
+When media storage isn't configured (no bucket, or neither a region nor an
+endpoint), every route here returns `400` with a message naming what's missing,
+so the admin UI can point at Settings rather than showing a failure.
+
+## Settings
+
+Requires `settings:get`/`settings:manage`. Settings are stored per group in the
+`settings` table; `media` is the only group so far.
+
+| Method | Path                   | Notes                                                                        |
+| ------ | ---------------------- | ---------------------------------------------------------------------------- |
+| GET    | `/settings`            | `{ media }`, with `s3.secret_access_key` masked as `••••••••` when set       |
+| PUT    | `/settings`            | `{ media }` (whole group). Returns the saved settings, masked the same way   |
+| POST   | `/settings/media/test` | `{ media }` — HeadBucket against the **body's** settings, not the saved ones |
+
+Sending the mask back verbatim in a `PUT` keeps the stored secret, so the UI can
+round-trip settings without ever holding the real key -- the same contract as
+the masked connection credentials.
+
+`media` is:
+
+```jsonc
+{
+  "provider": "s3",
+  "extensions": ["jpg", "png", "..."], // lowercase, no dot; ["*"] allows everything
+  "max_size_mb": 10,
+  "s3": {
+    "url": "", // endpoint; blank = AWS, derived from region
+    "public_url": "", // CDN/custom domain; used even for a private bucket
+    "region": "",
+    "access_key_id": "", // both key fields blank = SDK default chain (IAM role)
+    "secret_access_key": "",
+    "bucket": "",
+    "bucket_path": "", // optional prefix inside the bucket
+    "bucket_type": "public", // "private" serves pre-signed URLs instead
+    "expiry_seconds": 86400, // pre-signed URL lifetime; S3 caps this at 7 days
+    "force_path_style": null, // null = inferred: AWS virtual-hosted, everything else path-style
+  },
+}
+```
+
+`/settings/media/test` returns `{ ok: true }`, or `400` with a message mapped
+from the S3 status code (missing bucket / access denied / wrong region /
+unreachable endpoint) -- S3 answers HeadBucket with a bare status and no body.
+
 ## Tracking (public, unauthenticated, HMAC-signed)
 
 These URLs are generated automatically inside sent campaign emails -- you

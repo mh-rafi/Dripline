@@ -221,3 +221,43 @@ export interface Role {
   created_at: string;
   updated_at: string;
 }
+
+export interface MediaItem {
+  id: number;
+  uuid: string;
+  provider: string;
+  filename: string;
+  content_type: string;
+  size: number;
+  meta: Record<string, unknown>;
+  created_at: string;
+  /** Resolved server-side on every read -- a private bucket returns a
+   * pre-signed URL that expires, so this must not be cached or stored. */
+  url: string;
+}
+
+export interface S3Settings {
+  url: string;
+  public_url: string;
+  region: string;
+  access_key_id: string;
+  /** Comes back masked when one is stored; sending the mask back unchanged
+   * keeps the saved key. */
+  secret_access_key: string;
+  bucket: string;
+  bucket_path: string;
+  bucket_type: "public" | "private";
+  expiry_seconds: number;
+  force_path_style: boolean | null;
+}
+
+export interface MediaSettings {
+  provider: "s3";
+  extensions: string[];
+  max_size_mb: number;
+  s3: S3Settings;
+}
+
+export interface Settings {
+  media: MediaSettings;
+}

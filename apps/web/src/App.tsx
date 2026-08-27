@@ -16,6 +16,7 @@ import CampaignNew from "./pages/CampaignNew.js";
 import CampaignDetail from "./pages/CampaignDetail.js";
 import Automations from "./pages/Automations.js";
 import AutomationBuilder from "./pages/AutomationBuilder.js";
+import Media from "./pages/Media.js";
 import Settings from "./pages/Settings.js";
 import UserForm from "./pages/UserForm.js";
 import RoleForm from "./pages/RoleForm.js";
@@ -57,6 +58,7 @@ export default function App() {
         <Route path="/campaigns/new" element={<CampaignNew />} />
         <Route path="/campaigns/:id" element={<CampaignDetail />} />
         <Route path="/automations" element={<Automations />} />
+        <Route path="/media" element={<Media />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/settings/users/new" element={<UserForm />} />
         <Route path="/settings/users/:id" element={<UserForm />} />

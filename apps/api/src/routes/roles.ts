@@ -6,16 +6,24 @@ import { ALL_PERMISSIONS, isPermission, SUPER_ADMIN_ROLE_ID } from "../lib/permi
 
 const IdParam = z.object({ id: z.coerce.number() });
 
-const Permissions = z
+const PermissionsList = z
   .array(z.string())
-  .default([])
   .refine((perms) => perms.every(isPermission), { message: "unknown permission" });
 
 const CreateRole = z.object({
   name: z.string().min(1),
-  permissions: Permissions,
+  permissions: PermissionsList.default([]),
 });
-const UpdateRole = CreateRole.partial();
+// Deliberately NOT `CreateRole.partial()`: chaining `.optional()` onto a
+// `.default(...)`-wrapped schema doesn't stop the default from applying to
+// an omitted field (verified against this zod version) -- so a rename-only
+// PATCH (omitting `permissions`) would still parse to `permissions: []`,
+// defeating the handler's `!== undefined` guard and silently wiping the
+// role's entire permission set. Built from the default-less base instead.
+const UpdateRole = z.object({
+  name: z.string().min(1).optional(),
+  permissions: PermissionsList.optional(),
+});
 
 export default async function roleRoutes(app: FastifyInstance, opts: { db: DB }) {
   const { db } = opts;

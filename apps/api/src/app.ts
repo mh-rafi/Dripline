@@ -2,6 +2,7 @@ import path from "node:path";
 import Fastify, { type FastifyInstance } from "fastify";
 import cors from "@fastify/cors";
 import fastifyStatic from "@fastify/static";
+import multipart from "@fastify/multipart";
 import type pg from "pg";
 import { ZodError } from "zod";
 import type { Config } from "./config.js";
@@ -20,6 +21,8 @@ import connectionRoutes from "./routes/connections.js";
 import automationRoutes from "./routes/automations.js";
 import bounceRoutes from "./routes/bounces.js";
 import trackingRoutes from "./routes/tracking.js";
+import mediaRoutes from "./routes/media.js";
+import settingsRoutes from "./routes/settings.js";
 
 export function buildApp(pool: pg.Pool, db: DB, config: Config): FastifyInstance {
   // Fastify's types omit the hop-count form of trustProxy that proxy-addr (and
@@ -31,6 +34,10 @@ export function buildApp(pool: pg.Pool, db: DB, config: Config): FastifyInstance
   });
 
   app.register(cors, { origin: true });
+  // Media uploads. The per-request byte cap is the one configured in
+  // Settings; this is only the outer ceiling that keeps a runaway upload
+  // from being buffered before the route can reject it.
+  app.register(multipart, { limits: { fileSize: config.bodyLimitBytes, files: 1 } });
   app.register(authPlugin, { config, db });
 
   // Action-only endpoints (start/pause/enroll/...) are often called with no
@@ -75,6 +82,8 @@ export function buildApp(pool: pg.Pool, db: DB, config: Config): FastifyInstance
   app.register(automationRoutes, { db });
   app.register(bounceRoutes, { db });
   app.register(trackingRoutes, { db, config });
+  app.register(mediaRoutes, { db });
+  app.register(settingsRoutes, { db });
 
   // When a built admin UI is present this process serves it too, so a whole
   // install is one origin and one port -- which APP_URL depends on, since

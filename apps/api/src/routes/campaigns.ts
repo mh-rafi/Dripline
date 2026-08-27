@@ -56,9 +56,9 @@ function requireRateLimitPair<
 const CreateCampaign = CreateCampaignShape.superRefine(requireRateLimitPair);
 const UpdateCampaign = CreateCampaignShape.partial()
   .omit({ list_ids: true, connection_ids: true })
-  // Unlike create, edit needs to be able to explicitly clear these (the UI
-  // sends `null` for "None"/"unlimited"), not just omit the fields.
   .extend({
+    // Unlike create, edit needs to be able to explicitly clear these (the UI
+    // sends `null` for "None"/"unlimited"), not just omit the fields.
     template_id: z.number().int().nullable().optional(),
     from_name: z.string().nullable().optional(),
     reply_to: z
@@ -67,6 +67,16 @@ const UpdateCampaign = CreateCampaignShape.partial()
       .optional(),
     rate_limit_count: z.number().int().positive().nullable().optional(),
     rate_limit_duration_seconds: z.number().int().positive().nullable().optional(),
+    // `.partial()` keeps a `.default(...)` on the base shape active -- an
+    // omitted field would parse to the create-time default (e.g. `body: ""`,
+    // `content_type: "richtext"`) instead of `undefined`, and the handler's
+    // `...body` spread would then silently overwrite the existing value on
+    // every PATCH that doesn't happen to repeat it. Redeclared default-less
+    // here so an omitted field really does stay omitted from the parsed body.
+    body: z.string().optional(),
+    content_type: ContentType.optional(),
+    track_opens: z.boolean().optional(),
+    track_clicks: z.boolean().optional(),
   })
   // Only enforced when the caller is touching the throttle at all -- a PATCH
   // that omits both fields entirely (leaving the existing value untouched)

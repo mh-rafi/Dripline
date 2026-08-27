@@ -52,11 +52,20 @@ const ConnectionTypeSchema = z.enum(["smtp", "ses"]);
 // only required when enabled and not reusing the connection's own sending
 // credentials -- enforced below, alongside the ses/use_sending_credentials
 // constraint, once the connection `type` is known.
+// enabled/tls/use_sending_credentials/folder/max_age_days/max_messages_per_scan
+// are deliberately plain `.optional()`, not `.default(...)` -- this object is
+// reused as-is for both create and a PATCH's partial bounce_config patch, and
+// mergeBounceConfig (below) is what actually applies the create-time defaults
+// (when `existing` is null) or falls back to the saved value (when updating).
+// A `.default(...)` here would parse an omitted field to a concrete value
+// before mergeBounceConfig ever sees it, so a PATCH that only touches `host`/
+// `port` would silently reset the other fields (e.g. `enabled` back to false)
+// instead of preserving them.
 const BounceConfig = z.object({
-  enabled: z.boolean().default(false),
+  enabled: z.boolean().optional(),
   host: z.string().optional(),
   port: z.number().int().positive().optional(),
-  tls: z.boolean().default(true),
+  tls: z.boolean().optional(),
   username: z.string().optional(),
   password: z.string().optional(),
   // The address bounces should be sent to -- distinct from `username`,
@@ -66,10 +75,10 @@ const BounceConfig = z.object({
   // address). Only required/meaningful when use_sending_credentials is
   // false; see bounceEnvelopeFrom in services/connections.ts.
   email: z.string().email().optional(),
-  use_sending_credentials: z.boolean().default(true),
-  folder: z.string().min(1).default("INBOX"),
-  max_age_days: z.number().int().positive().default(7),
-  max_messages_per_scan: z.number().int().positive().default(200),
+  use_sending_credentials: z.boolean().optional(),
+  folder: z.string().min(1).optional(),
+  max_age_days: z.number().int().positive().optional(),
+  max_messages_per_scan: z.number().int().positive().optional(),
 });
 
 function validateBounceConfig(
@@ -211,18 +220,23 @@ function mergeBounceConfig(
   patch: z.infer<typeof BounceConfig> | undefined,
 ): BounceMailboxConfig | null {
   if (!patch) return existing ?? null;
+  // Bottom-level fallbacks below mirror BounceConfig's old schema defaults --
+  // now applied here instead, so create (existing null) behaves identically
+  // to before, while update genuinely preserves an omitted field's saved
+  // value instead of resetting it.
   return {
-    enabled: patch.enabled,
+    enabled: patch.enabled ?? existing?.enabled ?? false,
     host: patch.host ?? existing?.host ?? "",
     port: patch.port ?? existing?.port ?? 993,
-    tls: patch.tls,
+    tls: patch.tls ?? existing?.tls ?? true,
     username: patch.username ?? existing?.username ?? "",
     password: patch.password || existing?.password || "",
     email: patch.email ?? existing?.email ?? "",
-    use_sending_credentials: patch.use_sending_credentials,
-    folder: patch.folder,
-    max_age_days: patch.max_age_days,
-    max_messages_per_scan: patch.max_messages_per_scan,
+    use_sending_credentials:
+      patch.use_sending_credentials ?? existing?.use_sending_credentials ?? true,
+    folder: patch.folder ?? existing?.folder ?? "INBOX",
+    max_age_days: patch.max_age_days ?? existing?.max_age_days ?? 7,
+    max_messages_per_scan: patch.max_messages_per_scan ?? existing?.max_messages_per_scan ?? 200,
   };
 }
 

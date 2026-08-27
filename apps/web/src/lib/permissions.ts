@@ -58,6 +58,14 @@ export const PERMISSION_CATEGORIES: PermissionCategory[] = [
     ],
   },
   {
+    resource: "media",
+    label: "Media",
+    permissions: [
+      { value: "media:get", label: "View uploaded media" },
+      { value: "media:manage", label: "Upload and delete media" },
+    ],
+  },
+  {
     resource: "bounces",
     label: "Bounces",
     permissions: [
@@ -80,6 +88,14 @@ export const PERMISSION_CATEGORIES: PermissionCategory[] = [
     permissions: [
       { value: "roles:get", label: "View roles" },
       { value: "roles:manage", label: "Create, edit, and delete roles" },
+    ],
+  },
+  {
+    resource: "settings",
+    label: "Settings",
+    permissions: [
+      { value: "settings:get", label: "View instance settings" },
+      { value: "settings:manage", label: "Change instance settings" },
     ],
   },
 ];

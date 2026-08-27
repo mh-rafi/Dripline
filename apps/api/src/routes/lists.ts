@@ -9,7 +9,14 @@ const CreateList = z.object({
   optin: z.enum(["single", "double"]).default("single"),
   description: z.string().optional(),
 });
-const UpdateList = CreateList.partial();
+// Plain `.partial()` would keep `type`/`optin`'s `.default(...)` active, so
+// an omitted field would parse to the create-time default instead of
+// `undefined` -- the PATCH handler's `.set(body)` would then silently reset
+// e.g. a public list back to private on any edit that doesn't repeat `type`.
+const UpdateList = CreateList.partial().extend({
+  type: z.enum(["public", "private"]).optional(),
+  optin: z.enum(["single", "double"]).optional(),
+});
 
 export default async function listRoutes(app: FastifyInstance, opts: { db: DB }) {
   const { db } = opts;

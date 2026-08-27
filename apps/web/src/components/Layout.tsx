@@ -35,6 +35,7 @@ import {
   Plug,
   Settings as SettingsIcon,
   FileText,
+  Image as ImageIcon,
   PanelLeft,
 } from "lucide-react";
 
@@ -80,6 +81,7 @@ const navLinks = [
   { to: "/campaigns", label: "Campaigns", icon: Mail, end: false },
   { to: "/automations", label: "Automations", icon: Workflow, end: false },
   { to: "/connections", label: "Connections", icon: Plug, end: false },
+  { to: "/media", label: "Media", icon: ImageIcon, end: false },
   { to: "/settings", label: "Settings", icon: SettingsIcon, end: false },
 ];
 

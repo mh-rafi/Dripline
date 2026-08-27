@@ -166,7 +166,7 @@ export default async function subscriberRoutes(app: FastifyInstance, opts: { db:
       const body = CreateSubscriber.parse(req.body);
       let subscriber = await createSubscriber(db, {
         email: body.email,
-        name: body.name ?? "",
+        name: body.name,
         attribs: body.attribs,
       });
 
@@ -328,7 +328,7 @@ export default async function subscriberRoutes(app: FastifyInstance, opts: { db:
           // every new contact, which is intended (see docs/plan/automations_v2.md).
           const row = await createSubscriber(db, {
             email: s.email,
-            name: s.name ?? "",
+            name: s.name,
             attribs: s.attribs,
           });
           subscriberId = row.id;

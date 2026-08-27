@@ -9,9 +9,11 @@ export const PERMISSIONS = {
   automations: ["get", "manage"],
   connections: ["get", "manage"],
   templates: ["get", "manage"],
+  media: ["get", "manage"],
   bounces: ["get", "manage", "receive"],
   users: ["get", "manage"],
   roles: ["get", "manage"],
+  settings: ["get", "manage"],
 } as const;
 
 type PermissionResource = keyof typeof PERMISSIONS;

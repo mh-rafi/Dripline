@@ -325,6 +325,25 @@ export interface BouncesTable {
   created_at: Generated<Timestamp>;
 }
 
+export interface SettingsTable {
+  key: string;
+  value: Record<string, unknown>;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface MediaTable {
+  id: Generated<number>;
+  uuid: Generated<string>;
+  provider: Generated<string>;
+  filename: string;
+  content_type: Generated<string>;
+  // BIGINT comes back from pg as a string; nothing reads it arithmetically
+  // server-side, so it's carried through as-is and formatted in the UI.
+  size: Generated<string | number>;
+  meta: Generated<Record<string, unknown>>;
+  created_at: Generated<Timestamp>;
+}
+
 export interface Database {
   subscribers: SubscribersTable;
   lists: ListsTable;
@@ -344,4 +363,6 @@ export interface Database {
   automation_enrollments: AutomationEnrollmentsTable;
   automation_events: AutomationEventsTable;
   bounces: BouncesTable;
+  settings: SettingsTable;
+  media: MediaTable;
 }
