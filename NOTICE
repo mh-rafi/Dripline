@@ -31,12 +31,6 @@ This distribution bundles third-party software under its own licenses. The
 notable ones, and everything the build pulls in transitively, keep their
 original terms:
 
-  TinyMCE (apps/web)         GPL-2.0-or-later, or a commercial license from
-                             Tiny Technologies. This distribution uses the GPL
-                             option (see licenseKey: "gpl" in
-                             apps/web/src/components/content-editor/RichTextEditor.tsx).
-                             GPL-2.0-or-later may be taken as GPL-3.0, which
-                             AGPL-3.0 section 13 permits combining with.
   GrapesJS (apps/web)        BSD-3-Clause
   AWS SDK (apps/api)         Apache-2.0
 

@@ -48,7 +48,7 @@ pg-boss 12 upgrade introduced -- migrations now always complete before pg-boss
 connects. `node-pg-migrate` takes a Postgres advisory lock, so concurrent
 starts are safe. `RUN_MIGRATIONS=false` opts out.
 
-**Prebuilt multi-arch images.** The admin UI build pulls TinyMCE, GrapesJS and
+**Prebuilt multi-arch images.** The admin UI build pulls Tiptap, GrapesJS and
 React Flow and wants ~2 GB of RAM, which is a coin flip on a small VPS. The
 release workflow builds `linux/amd64` and `linux/arm64` on native runners (no
 QEMU), pushes by digest, and merges them into one manifest list tagged

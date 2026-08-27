@@ -1,9 +1,11 @@
 import * as React from "react";
+import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 const sidebarVariants = cva(
-  "bg-sidebar flex h-full w-full flex-col transition-all duration-300 ease-in-out",
+  "bg-sidebar flex h-full flex-col transition-[width,transform] duration-300 ease-in-out",
   {
     variants: { state: { expanded: "w-64", collapsed: "w-12" } },
     defaultVariants: { state: "expanded" },
@@ -11,10 +13,10 @@ const sidebarVariants = cva(
 );
 
 const sidebarMenuButtonVariants = cva(
-  "flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left outline-none ring-sidebar-ring transition-[width,height,padding] focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-50 [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+  "flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left outline-none ring-sidebar-ring transition-[width,height,padding] focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-50 [&>span:last-child]:truncate [&>svg]:size-5 [&>svg]:shrink-0 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground group-data-[collapsed=true]:justify-center group-data-[collapsed=true]:px-1",
   {
     variants: {
-      size: { sm: "h-7 text-xs", default: "h-8 text-sm", lg: "h-12 text-sm" },
+      size: { sm: "h-8 text-sm", default: "h-10 text-base", lg: "h-12 text-base" },
       variant: {
         default: "",
         primary: "bg-primary text-primary-foreground hover:bg-primary/90",
@@ -30,23 +32,36 @@ export interface SidebarProps
   extends React.HTMLAttributes<HTMLDivElement>, VariantProps<typeof sidebarVariants> {
   collapsed?: boolean;
   onCollapsedChange?: (collapsed: boolean) => void;
+  mobileOpen?: boolean;
 }
 
 const Sidebar = React.forwardRef<HTMLDivElement, SidebarProps>(
-  ({ className, collapsed = false, ...props }, ref) => (
-    <div
-      ref={ref}
-      data-sidebar="sidebar"
-      data-collapsed={collapsed}
-      className={cn(
-        sidebarVariants({ state: collapsed ? "collapsed" : "expanded" }),
-        "group relative",
-        collapsed && "overflow-hidden",
-        className,
-      )}
-      {...props}
-    />
-  ),
+  ({ className, collapsed = false, mobileOpen = false, ...props }, ref) => {
+    const isMobile = useIsMobile();
+    // Icon-only collapse only makes sense on desktop; the mobile drawer always
+    // opens full-width regardless of the desktop collapse preference.
+    const effectiveCollapsed = collapsed && !isMobile;
+    return (
+      <div
+        ref={ref}
+        data-sidebar="sidebar"
+        data-collapsed={effectiveCollapsed}
+        className={cn(
+          sidebarVariants({ state: effectiveCollapsed ? "collapsed" : "expanded" }),
+          "group",
+          isMobile
+            ? cn(
+                "fixed inset-y-0 left-0 z-50 shadow-xl",
+                mobileOpen ? "translate-x-0" : "-translate-x-full",
+              )
+            : "relative translate-x-0",
+          effectiveCollapsed && "overflow-hidden",
+          className,
+        )}
+        {...props}
+      />
+    );
+  },
 );
 Sidebar.displayName = "Sidebar";
 
@@ -158,25 +173,16 @@ export interface SidebarMenuButtonProps
 }
 
 const SidebarMenuButton = React.forwardRef<HTMLButtonElement, SidebarMenuButtonProps>(
-  ({ className, size, variant, isActive, asChild, ...props }, ref) => {
+  ({ className, size, variant, isActive, asChild = false, ...props }, ref) => {
+    const Comp = asChild ? Slot : "button";
     const computedVariant = isActive ? "selected" : variant;
-    if (asChild) {
-      return (
-        <div
-          data-sidebar="menu-button"
-          data-active={isActive}
-          className={cn(sidebarMenuButtonVariants({ size, variant: computedVariant, className }))}
-          {...(props as Record<string, unknown>)}
-        />
-      );
-    }
     return (
-      <button
+      <Comp
         ref={ref}
         data-sidebar="menu-button"
         data-active={isActive}
         className={cn(sidebarMenuButtonVariants({ size, variant: computedVariant, className }))}
-        {...props}
+        {...(props as Record<string, unknown>)}
       />
     );
   },

@@ -263,7 +263,7 @@ export default async function campaignRoutes(
       await db
         .deleteFrom("campaigns")
         .where("id", "=", id)
-        .where("status", "in", ["draft", "scheduled"])
+        .where("status", "in", ["draft", "scheduled", "finished"])
         .execute();
       return { ok: true };
     },

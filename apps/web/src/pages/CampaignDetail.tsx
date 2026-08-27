@@ -2,10 +2,12 @@ import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api } from "../lib/api.js";
 import type { Campaign, Connection, List, Template } from "../lib/types.js";
+import { useEmailHistory } from "../hooks/useEmailHistory.js";
 import Badge from "../components/Badge.js";
 import ProgressBar from "../components/ProgressBar.js";
 import DurationInput from "../components/DurationInput.js";
 import PreviewModal from "../components/PreviewModal.js";
+import EmailHistoryInput from "../components/EmailHistoryInput.js";
 import ContentTypeEditor, {
   type ContentType,
   type ContentValue,
@@ -66,7 +68,12 @@ export default function CampaignDetail() {
   const [trackOpens, setTrackOpens] = useState(true);
   const [trackClicks, setTrackClicks] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [testEmail, setTestEmail] = useState("");
+  const {
+    emails: testEmails,
+    addEmail: addTestEmail,
+    removeEmail: removeTestEmail,
+  } = useEmailHistory();
+  const [testEmail, setTestEmail] = useState(() => testEmails[0] ?? "");
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; error: string | null } | null>(null);
 
@@ -118,9 +125,19 @@ export default function CampaignDetail() {
     api.get<Analytics>(`/campaigns/${id}/analytics`).then(setAnalytics);
   }
 
+  /** Refreshes only the live status/progress display (status badge, send
+   * progress, analytics) -- unlike `load`, it never touches the editable
+   * form fields, so it can poll in the background without clobbering
+   * in-progress edits (typing, content-type switches, toolbar formatting)
+   * every few seconds. */
+  function refreshStatus() {
+    api.get<Campaign>(`/campaigns/${id}`).then(setCampaign);
+    api.get<Analytics>(`/campaigns/${id}/analytics`).then(setAnalytics);
+  }
+
   useEffect(() => {
     load();
-    const interval = setInterval(load, 4000);
+    const interval = setInterval(refreshStatus, 4000);
     return () => clearInterval(interval);
   }, [id]);
 
@@ -197,6 +214,7 @@ export default function CampaignDetail() {
   async function sendTest(e: React.FormEvent) {
     e.preventDefault();
     if (!testEmail) return;
+    addTestEmail(testEmail);
     setTesting(true);
     setTestResult(null);
     try {
@@ -247,12 +265,22 @@ export default function CampaignDetail() {
           className="space-y-4"
         >
           <Tabs defaultValue={defaultTab}>
-            <TabsList>
-              <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="details">Details</TabsTrigger>
-              <TabsTrigger value="content">Content</TabsTrigger>
-              <TabsTrigger value="recipients">Recipients</TabsTrigger>
-              <TabsTrigger value="settings">Settings</TabsTrigger>
+            <TabsList className="h-[60px]">
+              <TabsTrigger value="overview" className="h-full cursor-pointer px-4 text-base">
+                Overview
+              </TabsTrigger>
+              <TabsTrigger value="details" className="h-full cursor-pointer px-4 text-base">
+                Details
+              </TabsTrigger>
+              <TabsTrigger value="content" className="h-full cursor-pointer px-4 text-base">
+                Content
+              </TabsTrigger>
+              <TabsTrigger value="recipients" className="h-full cursor-pointer px-4 text-base">
+                Recipients
+              </TabsTrigger>
+              <TabsTrigger value="settings" className="h-full cursor-pointer px-4 text-base">
+                Settings
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="overview" className="space-y-4">
@@ -431,11 +459,13 @@ export default function CampaignDetail() {
                 <div className="space-y-2">
                   <FormLabel>Send test email</FormLabel>
                   <div className="flex items-center gap-2">
-                    <Input
+                    <EmailHistoryInput
                       type="email"
                       placeholder="you@example.com"
                       value={testEmail}
-                      onChange={(e) => setTestEmail(e.target.value)}
+                      onChange={setTestEmail}
+                      emails={testEmails}
+                      onRemoveEmail={removeTestEmail}
                       className="max-w-[280px]"
                     />
                     <Button

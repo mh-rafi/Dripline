@@ -2,12 +2,14 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api.js";
 import type { Campaign, Connection, List, Template } from "../lib/types.js";
+import { useEmailHistory } from "../hooks/useEmailHistory.js";
 import DurationInput from "../components/DurationInput.js";
 import ContentTypeEditor, {
   type ContentType,
   type ContentValue,
 } from "../components/content-editor/ContentTypeEditor.js";
 import PreviewModal from "../components/PreviewModal.js";
+import EmailHistoryInput from "../components/EmailHistoryInput.js";
 import {
   PageHeaderWrapper,
   BlockLayout,
@@ -27,6 +29,7 @@ import {
   TabsList,
   TabsTrigger,
   TabsContent,
+  toast,
 } from "../components/ui/index.js";
 
 export default function CampaignNew() {
@@ -57,7 +60,12 @@ export default function CampaignNew() {
   // later "Send test" or the real submit reuses/updates the same row instead
   // of creating a new draft campaign every time.
   const [createdId, setCreatedId] = useState<number | null>(null);
-  const [testEmail, setTestEmail] = useState("");
+  const {
+    emails: testEmails,
+    addEmail: addTestEmail,
+    removeEmail: removeTestEmail,
+  } = useEmailHistory();
+  const [testEmail, setTestEmail] = useState(() => testEmails[0] ?? "");
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; error: string | null } | null>(null);
 
@@ -109,6 +117,20 @@ export default function CampaignNew() {
     });
   }
 
+  /** Required fields are spread across tabs, and a hidden (inactive) tab's
+   * inputs are exempt from the browser's own `required` validation -- so a
+   * user on e.g. the Content tab could submit past an empty Name on Details
+   * with no feedback. This runs regardless of which tab is active. */
+  function missingFields(): string[] {
+    const missing: string[] = [];
+    if (!name.trim()) missing.push("Name");
+    if (!subject.trim()) missing.push("Subject");
+    if (!content.body.replace(/<[^>]*>/g, "").trim()) missing.push("Body");
+    if (listIds.length === 0) missing.push("Recipient list");
+    if (connectionIds.length === 0) missing.push("Sending connection");
+    return missing;
+  }
+
   function buildPayload() {
     return {
       name,
@@ -146,6 +168,11 @@ export default function CampaignNew() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    const missing = missingFields();
+    if (missing.length > 0) {
+      toast.error(`Missing required fields: ${missing.join(", ")}`);
+      return;
+    }
     setError(null);
     try {
       const campaign = await persist();
@@ -158,6 +185,7 @@ export default function CampaignNew() {
   async function sendTest(e: React.FormEvent) {
     e.preventDefault();
     if (!testEmail) return;
+    addTestEmail(testEmail);
     setTesting(true);
     setTestResult(null);
     setError(null);
@@ -187,11 +215,19 @@ export default function CampaignNew() {
       <BlockLayout>
         <form onSubmit={submit} className="space-y-4">
           <Tabs defaultValue="details">
-            <TabsList>
-              <TabsTrigger value="details">Details</TabsTrigger>
-              <TabsTrigger value="content">Content</TabsTrigger>
-              <TabsTrigger value="recipients">Recipients</TabsTrigger>
-              <TabsTrigger value="settings">Settings</TabsTrigger>
+            <TabsList className="h-[60px]">
+              <TabsTrigger value="details" className="h-full cursor-pointer px-4 text-base">
+                Details
+              </TabsTrigger>
+              <TabsTrigger value="content" className="h-full cursor-pointer px-4 text-base">
+                Content
+              </TabsTrigger>
+              <TabsTrigger value="recipients" className="h-full cursor-pointer px-4 text-base">
+                Recipients
+              </TabsTrigger>
+              <TabsTrigger value="settings" className="h-full cursor-pointer px-4 text-base">
+                Settings
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="details" className="space-y-4">
@@ -281,11 +317,13 @@ export default function CampaignNew() {
               <div className="space-y-2">
                 <FormLabel>Send test email</FormLabel>
                 <div className="flex items-center gap-2">
-                  <Input
+                  <EmailHistoryInput
                     type="email"
                     placeholder="you@example.com"
                     value={testEmail}
-                    onChange={(e) => setTestEmail(e.target.value)}
+                    onChange={setTestEmail}
+                    emails={testEmails}
+                    onRemoveEmail={removeTestEmail}
                     className="max-w-[280px]"
                   />
                   <Button

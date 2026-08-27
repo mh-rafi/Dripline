@@ -130,3 +130,53 @@ templates existed (8.3).
 **Status: verified in a real browser** -- preview correctly renders a selected template's
 styled wrapper with merge fields resolved; the iframe's style isolation confirmed (admin
 page's own styling unaffected).
+
+## 8.5 TinyMCE → Tiptap swap (2026-08-26)
+
+Replaced the richtext editor's engine. Motivation: TinyMCE's self-hosted bundle was the
+single largest chunk in the build (~1.28MB, ~431KB gzip) and its own skinned UI (oxide
+theme) didn't match the shadcn/Tailwind design system. Tiptap (ProseMirror-based, MIT) is
+headless, so the toolbar is built from this app's own `Button`/`Dropdown` primitives
+instead of a vendored UI.
+
+- `RichTextEditor.tsx` now wraps `@tiptap/react`'s `useEditor`/`EditorContent` with
+  `StarterKit` (bold/italic/underline/strike, headings, lists, blockquote, links, undo-redo)
+  plus `TextStyleKit` (text/background color), `TextAlign`, `Image`, and `TableKit`. Content
+  styling is inline Tailwind arbitrary-variant selectors (`[&_p]:...` etc.) rather than a
+  separate stylesheet, matching how the rest of the design system handles nested-element
+  styling (see `button.tsx`'s `[&_svg]:...`).
+- New `RichTextToolbar.tsx` implements every TinyMCE toolbar button this app used, plus
+  link/image insertion as small popovers (`Dropdown` + `PopoverPrimitive.Close`) instead of
+  TinyMCE's modal dialogs. The "code" (raw HTML source) button was dropped as redundant --
+  `ContentTypeEditor` already offers a dedicated "Raw HTML" mode.
+- The `value`/`onChange: (html: string) => void` contract on `RichTextEditor` is unchanged,
+  so `ContentTypeEditor.tsx` needed no changes. A `useEffect` re-syncs `editor` content when
+  `value` changes from outside (async campaign/template load, content-type conversion)
+  since Tiptap's `useEditor` only seeds `content` on initial mount.
+- `@tinymce/tinymce-react` and `tinymce` removed from `apps/web/package.json`; the GPL-2.0
+  NOTICE entry for TinyMCE removed (Tiptap/ProseMirror are MIT, no NOTICE entry needed).
+
+**Result:** the richtext chunk dropped to ~463KB (~144KB gzip) -- a ~2.8x reduction.
+
+**Bug found and fixed in review: intermittent crash on mount.** Opening the Content tab
+(richtext mode) threw `Cannot read properties of null (reading 'cached')` from inside
+ProseMirror's schema cache, unmounting `RichTextEditor` entirely (blank page) roughly half
+the time. Root cause: `@tiptap/react`'s `useEditor` builds its ProseMirror view
+synchronously during render by default, which races React 19 StrictMode's double-invoked
+effects (dev-only) -- the view's teardown from the first, discarded mount could still be
+in flight when the second mount's effects ran, transiently nulling `editor.schema` out from
+under whatever touched the editor next. Two things were needed, not one: the `extensions`
+array must be a fresh reference per mounted instance (`useMemo`, not a module-level
+constant -- `useEditor` diffs `extensions` element-by-element across renders and
+live-reconfigures on any identity change, so a shared singleton amplified the race across
+instances), and `useEditor` needs `immediatelyRender: false` (Tiptap's own documented fix
+for this exact class of StrictMode timing bug), which defers view creation to after the
+first effect commit. `RichTextEditor` now renders a `Skeleton` for the one frame before the
+deferred `editor` is ready.
+
+**Status: verified in a real browser.** Reproduced the crash live (~50% failure rate across
+repeated loads before the fix), then confirmed 6/6 clean loads after, including a fresh
+tab/JS-context reload. Typing, bold formatting (with correct toolbar active-state), and
+table insertion (including the contextual add-row/column toolbar) all confirmed working
+against the real app. Not yet exercised: link/image popovers, text/background color, a full
+save/reload round-trip, and the other content-type-switch paths.
