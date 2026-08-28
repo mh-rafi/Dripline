@@ -1,7 +1,8 @@
 # API reference
 
 Base path: `/api/v1`. All endpoints except `/meta`, `/auth/login`, `/auth/setup`,
-`/automations/hooks/:key`, and `/track/*` / `/unsubscribe/*` require an
+`/auth/forgot-password`, `/auth/reset-password`, `/automations/hooks/:key`, and
+`/track/*` / `/unsubscribe/*` require an
 `Authorization: Bearer <token>` header -- either an admin session JWT (from
 `/auth/login`) or an API user's token (format `dk_xxx_xxx`, created under
 **Settings → Users** in the admin UI, type `api`).
@@ -31,6 +32,30 @@ round-trip, and is what the container healthcheck polls.
 | POST   | `/auth/setup` | Creates the first user, always as Super Admin. Fails once any user exists.   |
 | POST   | `/auth/login` | `{ email, password }` → `{ token, user }`. `type: "api"` users can't log in. |
 | GET    | `/auth/me`    | Current user's profile (JWT or API token)                                    |
+
+`GET /meta` also reports `setup_required` (true only while no user exists at
+all), which is what the login page uses to decide whether to offer the
+first-run setup form.
+
+### Password management
+
+A password change bumps `users.password_changed_at`, and any JWT issued before
+that instant is refused with `401 { "error": "password changed -- sign in
+again" }`. That is what makes a reset actually evict a stolen session instead
+of leaving it valid for the rest of its 30 days -- so a client holding an old
+token must sign in again, and a client that just changed its own password must
+store the replacement token it gets back.
+
+| Method | Path                    | Notes                                                                                                                                                                                                                                                                                                                                                                                           |
+| ------ | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/auth/password`        | `{ current_password, new_password }` → `{ token }`. Changes **your own** password; needs a signed-in JWT session and no particular permission (an API-key request is refused). Wrong `current_password` returns `401`. Editing someone else's password stays on `PATCH /users/:id` behind `users:manage`.                                                                                       |
+| POST   | `/auth/forgot-password` | `{ email }` → `{ ok: true }`, unauthenticated. Always returns the same response so it can't be used to discover which addresses have accounts -- an unknown address, a disabled account, an unconfigured system connection and a provider failure are all indistinguishable to the caller. At most one mail per account per 60 seconds; issuing a link invalidates any earlier outstanding one. |
+| POST   | `/auth/reset-password`  | `{ token, password }` → `{ ok: true }`, unauthenticated. The token comes from the emailed link, is single-use, and expires an hour after it was issued. Consuming it deletes every reset token for that account and signs out that account's other sessions. Does **not** return a session -- the client sends the person back to `/auth/login`.                                                |
+
+Reset tokens are stored only as a SHA-256 hash, so the plaintext exists solely
+in the emailed link. The mail goes out over the connection chosen in
+**Settings → System** -- with none chosen, reset email is off and an admin has
+to change the password from the Users tab instead.
 
 ## Users & roles
 
@@ -231,13 +256,20 @@ so the admin UI can point at Settings rather than showing a failure.
 ## Settings
 
 Requires `settings:get`/`settings:manage`. Settings are stored per group in the
-`settings` table; `media` is the only group so far.
+`settings` table: `media` and `system`.
 
-| Method | Path                   | Notes                                                                        |
-| ------ | ---------------------- | ---------------------------------------------------------------------------- |
-| GET    | `/settings`            | `{ media }`, with `s3.secret_access_key` masked as `••••••••` when set       |
-| PUT    | `/settings`            | `{ media }` (whole group). Returns the saved settings, masked the same way   |
-| POST   | `/settings/media/test` | `{ media }` — HeadBucket against the **body's** settings, not the saved ones |
+| Method | Path                    | Notes                                                                                                                               |
+| ------ | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/settings`             | `{ media, system }`, with `s3.secret_access_key` masked as `••••••••` when set                                                      |
+| PUT    | `/settings`             | `{ media?, system? }` — each group is optional and whole; omitting one leaves it untouched, so each settings tab saves only its own |
+| POST   | `/settings/media/test`  | `{ media }` — HeadBucket against the **body's** settings, not the saved ones                                                        |
+| POST   | `/settings/system/test` | `{ to }` — sends a test message through the **saved** system connection, so it proves a password reset email would arrive           |
+
+`system` is currently `{ connection_id: number \| null }` — the connection
+Dripline sends its own mail through (password resets today). It is deliberately
+one explicit choice rather than "any enabled connection": system mail must not
+silently go out under a campaign's sending identity. `null` switches system
+email off.
 
 Sending the mask back verbatim in a `PUT` keeps the stored secret, so the UI can
 round-trip settings without ever holding the real key -- the same contract as

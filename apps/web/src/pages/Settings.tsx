@@ -4,6 +4,8 @@ import { api } from "../lib/api.js";
 import type { Role, User } from "../lib/types.js";
 import Badge from "../components/Badge.js";
 import MediaSettingsForm from "../components/MediaSettingsForm.js";
+import SystemSettingsForm from "../components/SystemSettingsForm.js";
+import AccountForm from "../components/AccountForm.js";
 import {
   PageHeaderWrapper,
   BlockLayout,
@@ -63,6 +65,8 @@ export default function Settings() {
           <TabsTrigger value="users">Users</TabsTrigger>
           <TabsTrigger value="roles">Roles</TabsTrigger>
           <TabsTrigger value="media">Media</TabsTrigger>
+          <TabsTrigger value="system">System</TabsTrigger>
+          <TabsTrigger value="account">Account</TabsTrigger>
         </TabsList>
 
         <TabsContent value="users">
@@ -217,6 +221,22 @@ export default function Settings() {
               library.
             </p>
             <MediaSettingsForm />
+          </BlockLayout>
+        </TabsContent>
+        <TabsContent value="system">
+          <BlockLayout padding="sm">
+            <p className="text-muted-foreground mb-6 text-sm">
+              How this instance sends mail on its own behalf, as opposed to campaign mail.
+            </p>
+            <SystemSettingsForm />
+          </BlockLayout>
+        </TabsContent>
+        <TabsContent value="account">
+          <BlockLayout padding="sm">
+            <p className="text-muted-foreground mb-6 text-sm">
+              Your own account. Changing another user&apos;s password is done from the Users tab.
+            </p>
+            <AccountForm />
           </BlockLayout>
         </TabsContent>
       </Tabs>

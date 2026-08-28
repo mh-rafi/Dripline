@@ -259,6 +259,13 @@ export interface MediaSettings {
   s3: S3Settings;
 }
 
+export interface SystemSettings {
+  /** Connection used for mail Dripline sends on its own behalf (password
+   * resets). `null` means system email is switched off. */
+  connection_id: number | null;
+}
+
 export interface Settings {
   media: MediaSettings;
+  system: SystemSettings;
 }

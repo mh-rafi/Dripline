@@ -65,13 +65,20 @@ export function buildApp(pool: pg.Pool, db: DB, config: Config): FastifyInstance
   // Unauthenticated on purpose: this is how the admin UI (and anyone else
   // interacting with the instance) is told where to get the source, which
   // AGPL-3.0 section 13 requires of a network-deployed modified version.
-  app.get("/api/v1/meta", async () => ({
-    version: config.version,
-    source_url: config.sourceUrl,
-    license: "AGPL-3.0-or-later",
-  }));
+  app.get("/api/v1/meta", async () => {
+    // Drives the login page's first-run affordance: the setup route below
+    // refuses once any user row exists, so the link that leads there is only
+    // offered while that's still true.
+    const anyUser = await db.selectFrom("users").select("id").executeTakeFirst();
+    return {
+      version: config.version,
+      source_url: config.sourceUrl,
+      license: "AGPL-3.0-or-later",
+      setup_required: !anyUser,
+    };
+  });
 
-  app.register(authRoutes, { db });
+  app.register(authRoutes, { db, config });
   app.register(userRoutes, { db });
   app.register(roleRoutes, { db });
   app.register(subscriberRoutes, { db });

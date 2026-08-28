@@ -12,6 +12,7 @@ export interface AuthUser {
   type: "user" | "api";
   role_id: number;
   permissions: Permission[];
+  passwordChangedAt: Date | null;
 }
 
 declare module "fastify" {
@@ -44,6 +45,7 @@ export default fp(async function authPlugin(
         "users.type",
         "users.role_id",
         "users.status",
+        "users.password_changed_at",
         "roles.permissions as role_permissions",
       ])
       .where("users.id", "=", id)
@@ -54,7 +56,20 @@ export default fp(async function authPlugin(
       type: row.type,
       role_id: row.role_id,
       permissions: row.role_permissions as Permission[],
+      passwordChangedAt: row.password_changed_at ? new Date(row.password_changed_at) : null,
     };
+  }
+
+  /** A JWT minted before the account's password last changed is dead, so a
+   * reset (or a change made because a session was stolen) actually evicts the
+   * other sessions instead of leaving them valid for the rest of their 30
+   * days. `iat` is whole seconds, so the comparison floors both sides --
+   * otherwise the replacement token handed out by the very request that
+   * changed the password could be rejected by its own sub-second timing. */
+  function issuedBeforePasswordChange(user: AuthUser, issuedAt: number | undefined): boolean {
+    if (!user.passwordChangedAt) return false;
+    if (issuedAt === undefined) return true;
+    return issuedAt < Math.floor(user.passwordChangedAt.getTime() / 1000);
   }
 
   app.decorate("requireAuth", async (req: FastifyRequest, reply: FastifyReply) => {
@@ -88,9 +103,12 @@ export default fp(async function authPlugin(
     }
 
     try {
-      const payload = app.jwt.verify<{ sub: number }>(token);
+      const payload = app.jwt.verify<{ sub: number; iat?: number }>(token);
       const user = await loadUser(payload.sub);
       if (!user) return reply.code(401).send({ error: "user disabled" });
+      if (issuedBeforePasswordChange(user, payload.iat)) {
+        return reply.code(401).send({ error: "password changed -- sign in again" });
+      }
       req.authUser = user;
       req.authMethod = "jwt";
     } catch {

@@ -3,6 +3,8 @@ import { useAuth } from "./lib/auth.js";
 import Layout from "./components/Layout.js";
 import Login from "./pages/Login.js";
 import Unsubscribe from "./pages/Unsubscribe.js";
+import ForgotPassword from "./pages/ForgotPassword.js";
+import ResetPassword from "./pages/ResetPassword.js";
 import Dashboard from "./pages/Dashboard.js";
 import Subscribers from "./pages/Subscribers.js";
 import SubscriberImport from "./pages/SubscriberImport.js";
@@ -37,6 +39,8 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/unsubscribe/:campaignUuid/:subscriberUuid" element={<Unsubscribe />} />
       <Route
         element={

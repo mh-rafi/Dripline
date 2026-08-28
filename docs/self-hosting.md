@@ -157,8 +157,15 @@ in front for TLS as above.
 
 Open your `APP_URL`. The login screen has a **first-time setup** link that
 creates the initial admin account (it calls `/api/v1/auth/setup`, which only
-works while no admin exists). Then add an SMTP provider under **Connections**
-before sending anything.
+works while no admin exists). The link disappears once that account exists, so
+on an established install the screen only offers sign-in. Then add an SMTP
+provider under **Connections** before sending anything.
+
+While you are there, pick one of those connections under **Settings → System**
+as the system email connection and send yourself the test message. That is what
+password reset links go out on -- without it, **Forgot password?** silently does
+nothing and a locked-out admin has to have their password changed for them from
+**Settings → Users**.
 
 ## Configuration
 

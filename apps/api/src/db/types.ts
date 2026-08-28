@@ -62,8 +62,18 @@ export interface UsersTable {
   api_key_prefix: string | null;
   api_key_hash: string | null;
   last_used_at: Timestamp | null;
+  password_changed_at: Timestamp | null;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
+}
+
+export interface PasswordResetTokensTable {
+  id: Generated<number>;
+  user_id: number;
+  token_hash: string;
+  expires_at: Timestamp;
+  used_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
 }
 
 export type RoleType = "user";
@@ -355,6 +365,7 @@ export interface Database {
   templates: TemplatesTable;
   users: UsersTable;
   roles: RolesTable;
+  password_reset_tokens: PasswordResetTokensTable;
   connections: ConnectionsTable;
   campaigns: CampaignsTable;
   campaign_lists: CampaignListsTable;

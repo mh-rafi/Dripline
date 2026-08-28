@@ -43,7 +43,19 @@ export const MediaSettingsSchema = z.object({
 export type S3Settings = z.infer<typeof S3SettingsSchema>;
 export type MediaSettings = z.infer<typeof MediaSettingsSchema>;
 
-const GROUPS = { media: MediaSettingsSchema } as const;
+export const SystemSettingsSchema = z.object({
+  /** Connection used for mail Dripline sends on its own behalf -- password
+   * resets today, other operational mail later. Deliberately a single
+   * explicit choice rather than "any enabled connection": system mail goes to
+   * admins from whatever identity they picked, and silently borrowing a
+   * campaign's sending domain is the cross-domain mixing the connection model
+   * exists to prevent. `null` means system email is switched off. */
+  connection_id: z.number().int().nullable().default(null),
+});
+
+export type SystemSettings = z.infer<typeof SystemSettingsSchema>;
+
+const GROUPS = { media: MediaSettingsSchema, system: SystemSettingsSchema } as const;
 export type SettingsGroup = keyof typeof GROUPS;
 
 export type Settings = { [G in SettingsGroup]: z.infer<(typeof GROUPS)[G]> };
@@ -63,8 +75,12 @@ export function getMediaSettings(db: DB): Promise<MediaSettings> {
   return readGroup(db, "media");
 }
 
+export function getSystemSettings(db: DB): Promise<SystemSettings> {
+  return readGroup(db, "system");
+}
+
 export async function getSettings(db: DB): Promise<Settings> {
-  return { media: await getMediaSettings(db) };
+  return { media: await getMediaSettings(db), system: await getSystemSettings(db) };
 }
 
 /** Replaces every masked secret in `next` with the value already stored, so a
@@ -91,6 +107,7 @@ export function redactSettings(settings: Settings): Settings {
         secret_access_key: settings.media.s3.secret_access_key ? MASKED_SECRET : "",
       },
     },
+    system: settings.system,
   };
 }
 
@@ -101,12 +118,22 @@ export async function resolveMediaSettings(db: DB, input: unknown): Promise<Medi
   return unmaskSecrets(MediaSettingsSchema.parse(input), await getMediaSettings(db));
 }
 
-export async function saveMediaSettings(db: DB, input: unknown): Promise<MediaSettings> {
-  const value = await resolveMediaSettings(db, input);
+async function writeGroup(db: DB, key: SettingsGroup, value: Record<string, unknown>) {
   await db
     .insertInto("settings")
-    .values({ key: "media", value })
+    .values({ key, value })
     .onConflict((oc) => oc.column("key").doUpdateSet({ value }))
     .execute();
+}
+
+export async function saveMediaSettings(db: DB, input: unknown): Promise<MediaSettings> {
+  const value = await resolveMediaSettings(db, input);
+  await writeGroup(db, "media", value);
+  return value;
+}
+
+export async function saveSystemSettings(db: DB, input: unknown): Promise<SystemSettings> {
+  const value = SystemSettingsSchema.parse(input);
+  await writeGroup(db, "system", value);
   return value;
 }
