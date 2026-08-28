@@ -21,6 +21,10 @@ const ContentType = z.enum(["richtext", "html", "plain", "markdown", "visual"]);
 const CreateCampaignShape = z.object({
   name: z.string().min(1),
   subject: z.string().min(1),
+  // Inbox-preview snippet, shown next to the subject in the recipient's mail
+  // client list -- never inside the opened email. See services/mailer.ts
+  // injectPreheader for how it actually reaches the rendered HTML.
+  preheader: z.string().optional(),
   body: z.string().default(""),
   // Original editor source (markdown text, visual builder JSON, or a mirror
   // of `body` for richtext/html/plain). See db/types.ts CampaignsTable.
@@ -61,6 +65,7 @@ const UpdateCampaign = CreateCampaignShape.partial()
     // Unlike create, edit needs to be able to explicitly clear these (the UI
     // sends `null` for "None"/"unlimited"), not just omit the fields.
     template_id: z.number().int().nullable().optional(),
+    preheader: z.string().nullable().optional(),
     from_name: z.string().nullable().optional(),
     reply_to: z
       .union([z.string().email(), z.literal("")])
@@ -92,6 +97,7 @@ const TestEmail = z.object({
   email: z.string().email(),
   name: z.string().optional(),
   subject: z.string().optional(),
+  preheader: z.string().nullish(),
   body: z.string().optional(),
   body_source: z.string().nullish(),
   content_type: ContentType.optional(),
@@ -110,6 +116,7 @@ const EmailsQuery = z.object({
 
 const Preview = z.object({
   subject: z.string().optional(),
+  preheader: z.string().optional(),
   body: z.string(),
   body_source: z.string().nullish(),
   content_type: ContentType.optional(),
@@ -190,6 +197,7 @@ export default async function campaignRoutes(
         .values({
           name: body.name,
           subject: body.subject,
+          preheader: body.preheader || null,
           body: body.body,
           body_source: body.body_source ?? null,
           content_type: body.content_type,
@@ -242,6 +250,7 @@ export default async function campaignRoutes(
         // for null rather than for null-or-empty at every use site.
         .set({
           ...body,
+          ...(body.preheader !== undefined ? { preheader: body.preheader || null } : {}),
           ...(body.from_name !== undefined ? { from_name: body.from_name || null } : {}),
           ...(body.reply_to !== undefined ? { reply_to: body.reply_to || null } : {}),
         })

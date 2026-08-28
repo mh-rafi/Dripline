@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import type { SelectQueryBuilder } from "kysely";
+import { sql, type SelectQueryBuilder } from "kysely";
 import type { DB } from "../db/kysely.js";
 import type { Database } from "../db/types.js";
 import {
@@ -286,6 +286,7 @@ export default async function subscriberRoutes(app: FastifyInstance, opts: { db:
     list_ids: z.array(z.number().int()).default([]),
     overwrite_user_info: z.boolean().default(false),
     overwrite_subscription_status: z.boolean().default(false),
+    attribs_mode: z.enum(["merge", "replace", "skip"]).default("merge"),
     subscribers: z.array(
       z.object({
         email: z.string().email(),
@@ -312,13 +313,27 @@ export default async function subscriberRoutes(app: FastifyInstance, opts: { db:
         let subscriberId: number;
         if (existing) {
           subscriberId = existing.id;
-          if (body.overwrite_user_info) {
+          // `attribs` is deliberately not gated on `overwrite_user_info` (which now
+          // only covers `name`): the default `merge` has to be able to add keys to an
+          // existing contact without clobbering the rest. A full replace would also
+          // wipe `tags`, which live inside attribs.
+          const update = {
+            ...(body.overwrite_user_info && s.name !== undefined ? { name: s.name } : {}),
+            ...(s.attribs && body.attribs_mode !== "skip"
+              ? {
+                  attribs:
+                    body.attribs_mode === "replace"
+                      ? s.attribs
+                      : sql<
+                          Record<string, unknown>
+                        >`attribs || ${JSON.stringify(s.attribs)}::jsonb`,
+                }
+              : {}),
+          };
+          if (Object.keys(update).length > 0) {
             await db
               .updateTable("subscribers")
-              .set({
-                ...(s.name !== undefined ? { name: s.name } : {}),
-                ...(s.attribs ? { attribs: s.attribs } : {}),
-              })
+              .set(update)
               .where("id", "=", subscriberId)
               .execute();
           }

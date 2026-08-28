@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { Plus, Trash2 } from "lucide-react";
 import { api } from "../lib/api.js";
 import { parseCSV } from "../lib/csv.js";
 import type { List } from "../lib/types.js";
@@ -67,6 +68,37 @@ function dedupeSingletonRoles(cols: ColumnMapping[]): ColumnMapping[] {
   });
 }
 
+type FixedAttributeType = "text" | "number" | "boolean" | "json";
+type AttribsMode = "merge" | "replace" | "skip";
+
+interface FixedAttribute {
+  id: number;
+  key: string;
+  value: string;
+  type: FixedAttributeType;
+}
+
+/** Returns `null` when the raw text doesn't parse as the chosen type. */
+function parseFixedValue(attr: FixedAttribute): { value: unknown } | null {
+  switch (attr.type) {
+    case "number": {
+      const trimmed = attr.value.trim();
+      const n = Number(trimmed);
+      return trimmed && Number.isFinite(n) ? { value: n } : null;
+    }
+    case "boolean":
+      return { value: attr.value === "true" };
+    case "json":
+      try {
+        return { value: JSON.parse(attr.value) as unknown };
+      } catch {
+        return null;
+      }
+    default:
+      return { value: attr.value };
+  }
+}
+
 const BATCH_SIZE = 300;
 
 export default function SubscriberImport() {
@@ -77,6 +109,9 @@ export default function SubscriberImport() {
   const [listIds, setListIds] = useState<number[]>([]);
   const [overwriteUserInfo, setOverwriteUserInfo] = useState(false);
   const [overwriteSubscriptionStatus, setOverwriteSubscriptionStatus] = useState(false);
+  const [attribsMode, setAttribsMode] = useState<AttribsMode>("merge");
+  const [fixedAttribs, setFixedAttribs] = useState<FixedAttribute[]>([]);
+  const nextFixedId = useRef(1);
   const [delimiter, setDelimiter] = useState(",");
 
   const [fileName, setFileName] = useState<string | null>(null);
@@ -153,6 +188,23 @@ export default function SubscriberImport() {
     setMapping((cols) => cols.map((c) => (c.index === index ? { ...c, attributeKey: key } : c)));
   }
 
+  function addFixedAttribute() {
+    setFixedAttribs((rows) => [
+      ...rows,
+      { id: nextFixedId.current++, key: "", value: "", type: "text" },
+    ]);
+  }
+
+  function updateFixedAttribute(id: number, patch: Partial<Omit<FixedAttribute, "id">>) {
+    setFixedAttribs((rows) => rows.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  }
+
+  function removeFixedAttribute(id: number) {
+    setFixedAttribs((rows) => rows.filter((r) => r.id !== id));
+  }
+
+  const invalidFixedAttribs = fixedAttribs.filter((f) => f.key.trim() && !parseFixedValue(f));
+
   const emailColumn = mapping.find((c) => c.role === "email");
 
   function buildSubscriber(
@@ -183,6 +235,13 @@ export default function SubscriberImport() {
         if (value) attribs[c.attributeKey] = value;
       }
     }
+    // Applied last so an import-wide value wins over whatever the file says.
+    for (const fa of fixedAttribs) {
+      const key = fa.key.trim();
+      if (!key) continue;
+      const parsedValue = parseFixedValue(fa);
+      if (parsedValue) attribs[key] = parsedValue.value;
+    }
 
     return {
       email,
@@ -191,6 +250,11 @@ export default function SubscriberImport() {
     };
   }
 
+  const previewAttribs =
+    parsed && emailColumn && parsed.dataRows[0]
+      ? (buildSubscriber(parsed.dataRows[0])?.attribs ?? null)
+      : null;
+
   async function runImport() {
     if (!parsed || !emailColumn) {
       setError("Map one column to Email before importing.");
@@ -198,6 +262,10 @@ export default function SubscriberImport() {
     }
     if (mode === "subscribe" && listIds.length === 0) {
       setError("Select at least one list, or switch to Blocklist mode.");
+      return;
+    }
+    if (invalidFixedAttribs.length > 0) {
+      setError("Every fixed attribute needs a value matching its type.");
       return;
     }
 
@@ -221,6 +289,7 @@ export default function SubscriberImport() {
           list_ids: mode === "subscribe" ? listIds : [],
           overwrite_user_info: overwriteUserInfo,
           overwrite_subscription_status: overwriteSubscriptionStatus,
+          attribs_mode: attribsMode,
           subscribers: batch,
         });
         imported += res.imported;
@@ -311,7 +380,7 @@ export default function SubscriberImport() {
           <FormRow>
             <div className="flex items-center gap-3">
               <Switch checked={overwriteUserInfo} onCheckedChange={setOverwriteUserInfo} />
-              <span className="text-sm">Overwrite user info</span>
+              <span className="text-sm">Overwrite name</span>
             </div>
             <div className="flex items-center gap-3">
               <Switch
@@ -323,9 +392,28 @@ export default function SubscriberImport() {
             </div>
           </FormRow>
           <p className="text-muted-foreground text-xs">
-            Overwrite name and attributes of existing subscribers / overwrite the status of existing
-            list subscriptions. Off by default — existing data is left alone.
+            Overwrite the name of an existing subscriber / overwrite the status of an existing list
+            subscription. Off by default — existing data is left alone.
           </p>
+
+          <div className="space-y-2">
+            <FormLabel>Attributes of existing subscribers</FormLabel>
+            <Select value={attribsMode} onValueChange={(v) => setAttribsMode(v as AttribsMode)}>
+              <SelectTrigger className="w-56">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="merge">Merge</SelectItem>
+                <SelectItem value="replace">Replace</SelectItem>
+                <SelectItem value="skip">Leave alone</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-muted-foreground text-xs">
+              Merge adds and updates only the imported keys and keeps every other attribute. Replace
+              swaps the whole attributes object, which also discards tags. Leave alone imports
+              nothing into the attributes of subscribers who already exist.
+            </p>
+          </div>
 
           {mode === "subscribe" && (
             <div className="space-y-2">
@@ -433,6 +521,123 @@ export default function SubscriberImport() {
                 ))}
               </TableBody>
             </Table>
+
+            <div className="space-y-3">
+              <Typography variant="h3">Fixed attributes</Typography>
+              <p className="text-muted-foreground text-sm">
+                Added to every imported row on top of anything mapped from the CSV — useful for
+                stamping a whole file with where it came from, e.g. <code>product</code> ={" "}
+                <code>Mentor LMS</code>. A fixed attribute wins over a CSV column of the same key.
+              </p>
+              {fixedAttribs.length > 0 && (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Key</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Value</TableHead>
+                      <TableHead className="w-12" />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {fixedAttribs.map((fa) => (
+                      <TableRow key={fa.id}>
+                        <TableCell>
+                          <Input
+                            value={fa.key}
+                            placeholder="product"
+                            onChange={(e) => updateFixedAttribute(fa.id, { key: e.target.value })}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Select
+                            value={fa.type}
+                            onValueChange={(v) =>
+                              updateFixedAttribute(fa.id, {
+                                type: v as FixedAttributeType,
+                                ...(v === "boolean" && fa.value !== "false"
+                                  ? { value: "true" }
+                                  : {}),
+                              })
+                            }
+                          >
+                            <SelectTrigger className="w-32">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="text">Text</SelectItem>
+                              <SelectItem value="number">Number</SelectItem>
+                              <SelectItem value="boolean">Boolean</SelectItem>
+                              <SelectItem value="json">JSON</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell>
+                          {fa.type === "boolean" ? (
+                            <Select
+                              value={fa.value === "false" ? "false" : "true"}
+                              onValueChange={(v) => updateFixedAttribute(fa.id, { value: v })}
+                            >
+                              <SelectTrigger className="w-28">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="true">True</SelectItem>
+                                <SelectItem value="false">False</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <Input
+                              value={fa.value}
+                              placeholder={fa.type === "json" ? '["vip","2026"]' : "Mentor LMS"}
+                              onChange={(e) =>
+                                updateFixedAttribute(fa.id, { value: e.target.value })
+                              }
+                            />
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            variant="ghost"
+                            size="sm-icon"
+                            tooltip="Remove"
+                            onClick={() => removeFixedAttribute(fa.id)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+              <Button variant="outline" size="sm" onClick={addFixedAttribute}>
+                <Plus className="mr-1 h-4 w-4" />
+                Add fixed attribute
+              </Button>
+              {invalidFixedAttribs.length > 0 && (
+                <Alert variant="destructive">
+                  These fixed attributes do not parse as their chosen type:{" "}
+                  {invalidFixedAttribs.map((f) => f.key.trim()).join(", ")}.
+                </Alert>
+              )}
+            </div>
+
+            {previewAttribs && (
+              <div className="space-y-2">
+                <FormLabel>Attributes preview (first row)</FormLabel>
+                <pre className="bg-muted overflow-x-auto rounded-md p-3 text-xs">
+                  {JSON.stringify(previewAttribs, null, 2)}
+                </pre>
+                <p className="text-muted-foreground text-xs">
+                  {attribsMode === "merge"
+                    ? "Merged into the existing attributes of subscribers already in the database."
+                    : attribsMode === "replace"
+                      ? "Replaces the entire attributes object of subscribers already in the database."
+                      : "Applied to new subscribers only."}
+                </p>
+              </div>
+            )}
 
             {error && <Alert variant="destructive">{error}</Alert>}
             {progress && (

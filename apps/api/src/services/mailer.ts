@@ -11,8 +11,33 @@ type Template = Selectable<TemplatesTable>;
 
 export interface RenderedEmail {
   subject: string;
+  /** The rendered preheader text, separately from `html` -- it's baked into
+   * a hidden div there too, but callers building an inbox-style preview (see
+   * PreviewModal) need the plain text on its own. */
+  preheader: string;
   html: string;
   unsubscribeUrl: string;
+}
+
+/**
+ * Hidden inbox-preview snippet, prepended just inside <body> (or at the very
+ * top if the body has no template wrapper). `display:none` hides it from the
+ * opened email; the repeated zero-width/non-breaking-space pairs pad out the
+ * snippet so a mail client that ignores `display:none` for preview purposes
+ * (several do) doesn't fall through into the visible body text and show a
+ * mix of the two.
+ */
+function injectPreheader(html: string, preheader: string): string {
+  if (!preheader) return html;
+  const hidden =
+    `<div style="display:none;max-height:0;max-width:0;overflow:hidden;font-size:1px;line-height:1px;color:transparent;opacity:0;mso-hide:all;">` +
+    `${escapeHtml(preheader)}` +
+    `${"&zwnj;&nbsp;".repeat(80)}` +
+    `</div>`;
+  const bodyOpenTag = html.match(/<body[^>]*>/i);
+  if (!bodyOpenTag) return hidden + html;
+  const insertAt = bodyOpenTag.index! + bodyOpenTag[0].length;
+  return html.slice(0, insertAt) + hidden + html.slice(insertAt);
 }
 
 // Same signature backs both URLs -- one endpoint (the RFC 8058 one-click
@@ -89,12 +114,22 @@ export async function renderCampaignEmail(
   // (a genuine multipart text/plain part is a possible future improvement --
   // see docs/plan/DEVELOPMENT_PLAN.md).
   if (campaign.content_type === "plain") {
+    // The hidden-div technique is HTML-only -- a plain-text email has no
+    // markup to hide anything in, and clients already show a snippet of the
+    // real first line for these, so preheader is silently skipped rather
+    // than surfaced as an error.
     const text = renderTemplate(body, context);
     const html = `<pre style="white-space:pre-wrap;font-family:inherit;margin:0">${escapeHtml(text)}</pre>`;
-    return { subject: renderTemplate(campaign.subject, context), html, unsubscribeUrl: unsubUrl };
+    return {
+      subject: renderTemplate(campaign.subject, context),
+      preheader: "",
+      html,
+      unsubscribeUrl: unsubUrl,
+    };
   }
 
-  let html = renderTemplate(body, context);
+  const preheader = campaign.preheader ? renderTemplate(campaign.preheader, context) : "";
+  let html = injectPreheader(renderTemplate(body, context), preheader);
 
   if (campaign.track_clicks) {
     // The unsubscribe link must never be wrapped in click-tracking below, or
@@ -116,7 +151,12 @@ export async function renderCampaignEmail(
     html = appendOpenPixel(html, openPixelUrl(config, subscriber, campaign));
   }
 
-  return { subject: renderTemplate(campaign.subject, context), html, unsubscribeUrl: unsubUrl };
+  return {
+    subject: renderTemplate(campaign.subject, context),
+    preheader,
+    html,
+    unsubscribeUrl: unsubUrl,
+  };
 }
 
 function escapeHtml(s: string): string {

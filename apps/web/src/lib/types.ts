@@ -96,6 +96,7 @@ export interface Campaign {
   uuid: string;
   name: string;
   subject: string;
+  preheader: string | null;
   body: string;
   body_source: string | null;
   content_type: ContentType;

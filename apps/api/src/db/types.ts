@@ -181,6 +181,10 @@ export interface CampaignsTable {
   uuid: Generated<string>;
   name: string;
   subject: string;
+  /** Inbox preview text -- shown next to the subject in the mail client's
+   * list, never inside the opened email. Rendered as a hidden div, so it's
+   * meaningless (and skipped) for plain-text campaigns. */
+  preheader: string | null;
   from_email: string | null;
   /** Display name only -- valid on its own, in which case the connection's
    * from_email is still the address. See fromAddress() in services/connections.ts. */

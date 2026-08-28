@@ -51,6 +51,7 @@ export async function duplicateCampaign(db: DB, id: number) {
     .values({
       name: `Copy of ${source.name}`,
       subject: source.subject,
+      preheader: source.preheader,
       body: source.body,
       body_source: source.body_source,
       content_type: source.content_type,
@@ -239,6 +240,7 @@ export async function getCampaignProgress(db: DB, campaignId: number): Promise<C
 export interface TestEmailOverrides {
   name?: string;
   subject?: string;
+  preheader?: string | null;
   body?: string;
   body_source?: string | null;
   content_type?: CampaignContentType;
@@ -269,6 +271,7 @@ export async function sendTestEmail(
   const campaign = {
     ...saved,
     subject: overrides.subject ?? saved.subject,
+    preheader: overrides.preheader !== undefined ? overrides.preheader : saved.preheader,
     body: overrides.body ?? saved.body,
     body_source: overrides.body_source !== undefined ? overrides.body_source : saved.body_source,
     content_type: overrides.content_type ?? saved.content_type,
@@ -337,6 +340,7 @@ function syntheticSubscriber(email: string, name: string): Selectable<Subscriber
 
 export interface PreviewInput {
   subject?: string;
+  preheader?: string;
   body: string;
   body_source?: string | null;
   content_type?: CampaignContentType;
@@ -355,7 +359,7 @@ export async function previewCampaign(
   db: DB,
   config: Config,
   input: PreviewInput,
-): Promise<{ subject: string; html: string }> {
+): Promise<{ subject: string; preheader: string; html: string }> {
   const content_type = input.content_type ?? "richtext";
   const body = content_type === "markdown" ? markdownToHtml(input.body) : input.body;
 
@@ -372,6 +376,7 @@ export async function previewCampaign(
     uuid: randomUUID(),
     name: "Preview",
     subject: input.subject ?? "",
+    preheader: input.preheader ?? null,
     body,
     content_type,
     track_opens: true,
@@ -380,5 +385,5 @@ export async function previewCampaign(
 
   const subscriber = syntheticSubscriber("preview@example.com", "Preview Subscriber");
   const rendered = await renderCampaignEmail(db, config, campaign, template ?? null, subscriber);
-  return { subject: rendered.subject, html: rendered.html };
+  return { subject: rendered.subject, preheader: rendered.preheader, html: rendered.html };
 }

@@ -2,6 +2,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, Button } from "./ui/i
 
 interface PreviewModalProps {
   subject?: string;
+  preheader?: string;
   html: string;
   onClose: () => void;
 }
@@ -10,7 +11,7 @@ interface PreviewModalProps {
  * dangerouslySetInnerHTML directly in the page -- a template's own <style>
  * block (e.g. targeting `body`) would otherwise leak into the whole admin
  * app's styles. */
-export default function PreviewModal({ subject, html, onClose }: PreviewModalProps) {
+export default function PreviewModal({ subject, preheader, html, onClose }: PreviewModalProps) {
   return (
     <Dialog
       open
@@ -22,7 +23,15 @@ export default function PreviewModal({ subject, html, onClose }: PreviewModalPro
         <DialogHeader className="border-border flex-row items-center justify-between space-y-0 border-b px-4 py-3">
           <div>
             <DialogTitle className="text-base">Preview</DialogTitle>
-            {subject && <p className="text-muted-foreground text-sm">{subject}</p>}
+            {/* The preheader is invisible in the rendered body below (that's
+                the point) -- this is the only place in the UI it's actually
+                visible, mimicking the inbox row it's written for. */}
+            {subject && (
+              <p className="text-muted-foreground text-sm">
+                {subject}
+                {preheader && <span className="text-muted-foreground/70"> — {preheader}</span>}
+              </p>
+            )}
           </div>
           <Button variant="outline" size="sm" onClick={onClose}>
             Close

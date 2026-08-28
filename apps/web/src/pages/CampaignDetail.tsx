@@ -57,6 +57,7 @@ export default function CampaignDetail() {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [name, setName] = useState("");
   const [subject, setSubject] = useState("");
+  const [preheader, setPreheader] = useState("");
   const [contentType, setContentType] = useState<ContentType>("richtext");
   const [content, setContent] = useState<ContentValue>({ body: "", body_source: null });
   const [fromEmail, setFromEmail] = useState("");
@@ -79,7 +80,11 @@ export default function CampaignDetail() {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; error: string | null } | null>(null);
 
-  const [preview, setPreview] = useState<{ subject: string; html: string } | null>(null);
+  const [preview, setPreview] = useState<{
+    subject: string;
+    preheader: string;
+    html: string;
+  } | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
 
@@ -91,13 +96,17 @@ export default function CampaignDetail() {
     setPreviewLoading(true);
     setPreviewError(null);
     try {
-      const result = await api.post<{ subject: string; html: string }>("/campaigns/preview", {
-        subject,
-        body: content.body,
-        body_source: content.body_source,
-        content_type: contentType,
-        template_id: templateId ? Number(templateId) : undefined,
-      });
+      const result = await api.post<{ subject: string; preheader: string; html: string }>(
+        "/campaigns/preview",
+        {
+          subject,
+          preheader: preheader || undefined,
+          body: content.body,
+          body_source: content.body_source,
+          content_type: contentType,
+          template_id: templateId ? Number(templateId) : undefined,
+        },
+      );
       setPreview(result);
     } catch (err) {
       setPreviewError(err instanceof Error ? err.message : "preview failed");
@@ -111,6 +120,7 @@ export default function CampaignDetail() {
       setCampaign(c);
       setName(c.name);
       setSubject(c.subject);
+      setPreheader(c.preheader ?? "");
       setContentType(c.content_type);
       setContent({ body: c.body, body_source: c.body_source });
       setFromEmail(c.from_email ?? "");
@@ -188,6 +198,7 @@ export default function CampaignDetail() {
       await api.patch(`/campaigns/${id}`, {
         name,
         subject,
+        preheader: preheader || null,
         body: content.body,
         body_source: content.body_source,
         content_type: contentType,
@@ -225,6 +236,7 @@ export default function CampaignDetail() {
         {
           email: testEmail,
           subject,
+          preheader: preheader || null,
           body: content.body,
           body_source: content.body_source,
           content_type: contentType,
@@ -418,6 +430,21 @@ export default function CampaignDetail() {
                   value={subject}
                   onChange={(e) => setSubject(e.target.value)}
                 />
+              </div>
+
+              <div className="space-y-2">
+                <FormLabel>Email pre-header (optional)</FormLabel>
+                <Input
+                  disabled={!canEdit}
+                  maxLength={150}
+                  placeholder="A short teaser shown in the inbox, after the subject"
+                  value={preheader}
+                  onChange={(e) => setPreheader(e.target.value)}
+                />
+                <p className="text-muted-foreground text-xs">
+                  Shown by mail clients in the inbox list, next to the subject. Never appears inside
+                  the opened email.
+                </p>
               </div>
 
               <div className="space-y-2">
@@ -691,6 +718,7 @@ export default function CampaignDetail() {
       {preview && (
         <PreviewModal
           subject={preview.subject}
+          preheader={preview.preheader}
           html={preview.html}
           onClose={() => setPreview(null)}
         />
