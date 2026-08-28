@@ -6,6 +6,7 @@ import type { Config } from "../config.js";
 import { NotFoundError } from "../lib/errors.js";
 import {
   cancelCampaign,
+  reopenCampaign,
   duplicateCampaign,
   getCampaignOrThrow,
   getCampaignProgress,
@@ -343,6 +344,15 @@ export default async function campaignRoutes(
     async (req) => {
       const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
       return cancelCampaign(db, id);
+    },
+  );
+
+  app.post(
+    "/api/v1/campaigns/:id/reopen",
+    { preHandler: app.requirePermission("campaigns:send") },
+    async (req) => {
+      const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
+      return reopenCampaign(db, id);
     },
   );
 

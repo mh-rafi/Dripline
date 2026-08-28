@@ -27,6 +27,7 @@ import {
   CheckboxLabel,
   FormLabel,
   FormRow,
+  Popconfirm,
   Skeleton,
   Switch,
   Tabs,
@@ -338,16 +339,28 @@ export default function CampaignDetail() {
                     Pause
                   </Button>
                 )}
-                {(campaign.status === "running" ||
-                  campaign.status === "paused" ||
-                  campaign.status === "draft") && (
+                {/* Not offered on a draft: there is no send to stop, so the
+                    only thing cancelling a draft achieves is making it
+                    unusable -- next to "Start sending", that was a trap. */}
+                {(campaign.status === "running" || campaign.status === "paused") && (
+                  <Popconfirm
+                    description="Cancel this campaign? Sending stops and no further emails go out. You can reopen it as a draft afterwards."
+                    onConfirm={() => action(() => api.post(`/campaigns/${id}/cancel`))}
+                    confirmText="Cancel campaign"
+                  >
+                    <Button type="button" disabled={busy} variant="destructive">
+                      Cancel
+                    </Button>
+                  </Popconfirm>
+                )}
+                {campaign.status === "cancelled" && (
                   <Button
                     type="button"
                     disabled={busy}
-                    variant="destructive"
-                    onClick={() => action(() => api.post(`/campaigns/${id}/cancel`))}
+                    variant="outline"
+                    onClick={() => action(() => api.post(`/campaigns/${id}/reopen`))}
                   >
-                    Cancel
+                    Reopen as draft
                   </Button>
                 )}
               </div>
@@ -658,9 +671,18 @@ export default function CampaignDetail() {
               <Button type="submit" disabled={saving}>
                 {saving ? "Saving…" : "Save changes"}
               </Button>
-              <Button type="button" variant="outline" disabled={saving} onClick={() => load()}>
-                Cancel
-              </Button>
+              {/* Named "Cancel" until it collided with the campaign-cancel
+                  action above -- on a paused campaign both rendered at once,
+                  one discarding edits and the other ending the send. */}
+              <Popconfirm
+                description="Discard your unsaved changes to this campaign?"
+                onConfirm={() => load()}
+                confirmText="Discard"
+              >
+                <Button type="button" variant="outline" disabled={saving}>
+                  Discard changes
+                </Button>
+              </Popconfirm>
             </div>
           )}
         </form>

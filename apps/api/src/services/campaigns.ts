@@ -19,7 +19,11 @@ const ALLOWED_TRANSITIONS: Record<CampaignStatus, CampaignStatus[]> = {
   running: ["paused", "cancelled"],
   paused: ["running", "cancelled"],
   finished: [],
-  cancelled: [],
+  // Reopening a cancelled campaign is safe to allow: enqueueEligibleRecipients
+  // inserts with ON CONFLICT DO NOTHING, so a restart resumes where the send
+  // stopped and never re-mails anyone already sent to. It goes back to draft
+  // (not straight to running) so the send has to be started deliberately.
+  cancelled: ["draft"],
 };
 
 export async function getCampaignOrThrow(db: DB, id: number) {
@@ -188,6 +192,13 @@ export async function cancelCampaign(db: DB, id: number) {
   const campaign = await getCampaignOrThrow(db, id);
   assertTransition(campaign.status, "cancelled");
   await db.updateTable("campaigns").set({ status: "cancelled" }).where("id", "=", id).execute();
+  return getCampaignOrThrow(db, id);
+}
+
+export async function reopenCampaign(db: DB, id: number) {
+  const campaign = await getCampaignOrThrow(db, id);
+  assertTransition(campaign.status, "draft");
+  await db.updateTable("campaigns").set({ status: "draft" }).where("id", "=", id).execute();
   return getCampaignOrThrow(db, id);
 }
 
