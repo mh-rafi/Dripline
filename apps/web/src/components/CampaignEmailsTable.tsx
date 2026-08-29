@@ -32,7 +32,6 @@ export default function CampaignEmailsTable({ campaignId }: { campaignId: number
 
   return (
     <div>
-      <h3 className="mt-0 text-lg font-semibold">Recipient activity</h3>
       <Table>
         <TableHeader>
           <TableRow>

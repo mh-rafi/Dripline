@@ -81,6 +81,80 @@ export function getCampaignUnsubscribeCounts(db: DB, campaignId: number) {
   return countBy(db, "campaign_id", campaignId);
 }
 
+/** Each row carries `lists` -- names for the `list_ids` that still resolve. A
+ * list deleted since the unsubscribe keeps its id in `list_ids` with no entry
+ * in `lists`, so the UI can still say how many lists were left. */
+async function listBy(
+  db: DB,
+  column: "campaign_id" | "automation_id",
+  id: number,
+  limit: number,
+  offset: number,
+) {
+  const [rows, totalResult] = await Promise.all([
+    db
+      .selectFrom("campaign_unsubscribes")
+      // Left join: subscriber_id goes null when a contact is deleted, and the
+      // unsubscribe still happened.
+      .leftJoin("subscribers", "subscribers.id", "campaign_unsubscribes.subscriber_id")
+      .select([
+        "campaign_unsubscribes.id",
+        "campaign_unsubscribes.subscriber_id",
+        "subscribers.email as subscriber_email",
+        "subscribers.name as subscriber_name",
+        "campaign_unsubscribes.source",
+        "campaign_unsubscribes.list_ids",
+        "campaign_unsubscribes.created_at",
+      ])
+      .where(column, "=", id)
+      .orderBy("campaign_unsubscribes.id", "desc")
+      .limit(limit)
+      .offset(offset)
+      .execute(),
+    db
+      .selectFrom("campaign_unsubscribes")
+      .select(db.fn.countAll().as("count"))
+      .where(column, "=", id)
+      .executeTakeFirstOrThrow(),
+  ]);
+
+  // One lookup for every list named on this page, rather than a join that
+  // would fan each unsubscribe out into one row per list.
+  const referenced = [...new Set(rows.flatMap((r) => r.list_ids))];
+  const lists = referenced.length
+    ? await db.selectFrom("lists").select(["id", "name"]).where("id", "in", referenced).execute()
+    : [];
+  const byId = new Map(lists.map((l) => [l.id, l]));
+
+  return {
+    unsubscribes: rows.map((r) => ({
+      ...r,
+      lists: r.list_ids
+        .map((lid) => byId.get(lid))
+        .filter((l): l is { id: number; name: string } => l != null),
+    })),
+    total: Number(totalResult.count),
+  };
+}
+
+export function listCampaignUnsubscribes(
+  db: DB,
+  campaignId: number,
+  limit: number,
+  offset: number,
+) {
+  return listBy(db, "campaign_id", campaignId, limit, offset);
+}
+
+export function listAutomationUnsubscribes(
+  db: DB,
+  automationId: number,
+  limit: number,
+  offset: number,
+) {
+  return listBy(db, "automation_id", automationId, limit, offset);
+}
+
 export function getAutomationUnsubscribeCounts(db: DB, automationId: number) {
   return countBy(db, "automation_id", automationId);
 }

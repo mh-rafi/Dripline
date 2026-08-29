@@ -147,6 +147,21 @@ export interface CampaignEmail {
   clicks: number;
 }
 
+export type UnsubscribeSource = "one_click" | "preferences" | "all";
+
+/** One unsubscribe action. `lists` names the lists left; a list deleted since
+ * then stays in `list_ids` without a matching entry in `lists`. */
+export interface CampaignUnsubscribe {
+  id: string;
+  subscriber_id: number | null;
+  subscriber_email: string | null;
+  subscriber_name: string | null;
+  source: UnsubscribeSource;
+  list_ids: number[];
+  lists: { id: number; name: string }[];
+  created_at: string;
+}
+
 export type AutomationStatus = "draft" | "published" | "paused";
 export type AutomationReentryMode = "once" | "multiple";
 

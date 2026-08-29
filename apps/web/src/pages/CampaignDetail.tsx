@@ -9,6 +9,7 @@ import DurationInput from "../components/DurationInput.js";
 import PreviewModal from "../components/PreviewModal.js";
 import EmailHistoryInput from "../components/EmailHistoryInput.js";
 import CampaignEmailsTable from "../components/CampaignEmailsTable.js";
+import CampaignUnsubscribesTable from "../components/CampaignUnsubscribesTable.js";
 import ContentTypeEditor, {
   type ContentType,
   type ContentValue,
@@ -388,7 +389,25 @@ export default function CampaignDetail() {
                 )}
               </div>
 
-              {campaign.status !== "draft" && <CampaignEmailsTable campaignId={campaign.id} />}
+              {campaign.status !== "draft" && (
+                <Tabs defaultValue="recipients">
+                  <TabsList>
+                    <TabsTrigger value="recipients">Recipient activity</TabsTrigger>
+                    <TabsTrigger value="unsubscribers">
+                      Unsubscribers
+                      {analytics && analytics.unsubscribes > 0
+                        ? ` (${analytics.unsubscribes})`
+                        : ""}
+                    </TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="recipients">
+                    <CampaignEmailsTable campaignId={campaign.id} />
+                  </TabsContent>
+                  <TabsContent value="unsubscribers">
+                    <CampaignUnsubscribesTable campaignId={campaign.id} />
+                  </TabsContent>
+                </Tabs>
+              )}
             </TabsContent>
 
             <TabsContent value="details" className="space-y-4">

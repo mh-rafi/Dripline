@@ -4,7 +4,10 @@ import { z } from "zod";
 import type { DB } from "../db/kysely.js";
 import type { Config } from "../config.js";
 import { NotFoundError } from "../lib/errors.js";
-import { getCampaignUnsubscribeCounts } from "../services/unsubscribes.js";
+import {
+  getCampaignUnsubscribeCounts,
+  listCampaignUnsubscribes,
+} from "../services/unsubscribes.js";
 import {
   cancelCampaign,
   reopenCampaign,
@@ -497,6 +500,16 @@ export default async function campaignRoutes(
       ]);
 
       return { emails, total: Number(totalResult.count) };
+    },
+  );
+
+  app.get(
+    "/api/v1/campaigns/:id/unsubscribes",
+    { preHandler: app.requirePermission("campaigns:get") },
+    async (req) => {
+      const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
+      const { limit, offset } = EmailsQuery.parse(req.query);
+      return listCampaignUnsubscribes(db, id, limit, offset);
     },
   );
 }
