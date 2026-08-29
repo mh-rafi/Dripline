@@ -188,7 +188,7 @@ campaign.
 | POST   | `/campaigns/:id/test`        | `{ email, name?, subject?, preheader?, body?, body_source?, content_type?, from_email?, from_name?, reply_to?, template_id? }` → `{ ok, error }`. Sends one-off, using the campaign's _saved_ connections but any overrides passed in -- doesn't persist them or touch `campaign_emails`/progress. `email` need not be an existing subscriber.                                                                               |
 | POST   | `/campaigns/preview`         | `{ subject?, preheader?, body, body_source?, content_type?, template_id? }` → `{ subject, preheader, html }`. Renders the given content the same way a real send would (template wrapper, merge fields, markdown conversion, tracking links against a synthetic subscriber) -- no saved campaign or sending connection required, so it works for a never-saved draft. Doesn't send anything.                                 |
 | GET    | `/campaigns/:id/progress`    | `{ pending, queued, sent, failed, skipped, total }` -- always live, never cached                                                                                                                                                                                                                                                                                                                                             |
-| GET    | `/campaigns/:id/analytics`   | `{ opens, unique_opens, clicks, unique_clicks }`                                                                                                                                                                                                                                                                                                                                                                             |
+| GET    | `/campaigns/:id/analytics`   | `{ opens, unique_opens, clicks, unique_clicks, unsubscribes, unique_unsubscribes }`                                                                                                                                                                                                                                                                                                                                          |
 
 **`preheader`** is the inbox-preview snippet shown next to the subject in the
 recipient's mail client list -- it never appears inside the opened email.
@@ -214,6 +214,7 @@ with pointer edges, not array order.
 | DELETE | `/automations/:id`             | Also removes the enrollments                                                                                                                                                                                                                                      |
 | POST   | `/automations/:id/enroll`      | `{ subscriber_id }` manual enrollment (respects `reentry_mode` and publish state)                                                                                                                                                                                 |
 | GET    | `/automations/:id/enrollments` | Recent enrollments with `current_node_id`, `next_run_at`, contact email                                                                                                                                                                                           |
+| GET    | `/automations/:id/analytics`   | `{ unsubscribes, unique_unsubscribes }` — departures attributed to this automation's emails                                                                                                                                                                       |
 
 Triggers: `list_applied`, `list_removed`, `contact_created`, `webhook_incoming`.
 The two list triggers require at least one list in `trigger_config.list_ids` --
@@ -317,3 +318,23 @@ The automation variant is the one-click (List-Unsubscribe) target for emails sen
 automation. An automation isn't list-scoped the way a campaign is, so one-click there
 unsubscribes the contact from every list; the visible link in the body still goes to the
 per-list preference page.
+
+Note that the preference page's own routes (`/unsubscribe/:uuid/:subscriberUuid/lists`
+and `/all`) take **either** a campaign or an automation uuid in that first slot --
+automation emails reuse the same page, signing against the automation's uuid. Anything
+resolving that uuid has to check both tables; `resolveUnsubscribeOrigin` in
+`services/unsubscribes.ts` is the one place that does.
+
+### Unsubscribe recording
+
+Every one of these routes writes one row to `campaign_unsubscribes` per unsubscribe
+**action** (not per list -- the lists left are in that row's `list_ids` array), tagged
+with either `campaign_id` or `automation_id`, never both. `source` is `one_click`,
+`preferences`, or `all`.
+
+Only memberships the action _genuinely_ changed are counted: a repeat hit on the same
+link records nothing. That matters because RFC 8058 one-click targets get re-fetched by
+mail clients and security scanners, so counting requests rather than departures would
+inflate the number. Rows are created going forward only -- unsubscribes predating this
+table are not backfilled, and there is no way to reconstruct them, since
+`subscriber_lists` holds current state with no campaign attribution.

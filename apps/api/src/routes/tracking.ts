@@ -10,6 +10,7 @@ import {
   unsubscribeFromCampaignLists,
   unsubscribeFromLists,
 } from "../services/subscribers.js";
+import { recordUnsubscribe, resolveUnsubscribeOrigin } from "../services/unsubscribes.js";
 
 const Params = z.object({ campaignUuid: z.string().uuid(), subscriberUuid: z.string().uuid() });
 
@@ -108,7 +109,16 @@ export default async function trackingRoutes(
       .select("id")
       .where("uuid", "=", subscriberUuid)
       .executeTakeFirst();
-    if (subscriber) await unsubscribeFromAllLists(db, subscriber.id);
+    if (subscriber) {
+      const listIds = await unsubscribeFromAllLists(db, subscriber.id);
+      const origin = await resolveUnsubscribeOrigin(db, automationUuid);
+      await recordUnsubscribe(db, {
+        subscriberId: subscriber.id,
+        ...origin,
+        source: "one_click",
+        listIds,
+      });
+    }
     return { ok: true };
   });
 
@@ -124,7 +134,13 @@ export default async function trackingRoutes(
 
     const { campaignId, subscriberId } = await resolveIds(db, campaignUuid, subscriberUuid);
     if (campaignId && subscriberId) {
-      await unsubscribeFromCampaignLists(db, subscriberId, campaignId);
+      const listIds = await unsubscribeFromCampaignLists(db, subscriberId, campaignId);
+      await recordUnsubscribe(db, {
+        subscriberId,
+        campaignId,
+        source: "one_click",
+        listIds,
+      });
     }
     return { ok: true };
   });
@@ -173,7 +189,18 @@ export default async function trackingRoutes(
       .select("id")
       .where("uuid", "=", subscriberUuid)
       .executeTakeFirst();
-    if (subscriber) await unsubscribeFromLists(db, subscriber.id, list_ids);
+    if (subscriber) {
+      const changed = await unsubscribeFromLists(db, subscriber.id, list_ids);
+      // The uuid here may belong to a campaign or an automation -- both kinds
+      // of email send people to this same page.
+      const origin = await resolveUnsubscribeOrigin(db, campaignUuid);
+      await recordUnsubscribe(db, {
+        subscriberId: subscriber.id,
+        ...origin,
+        source: "preferences",
+        listIds: changed,
+      });
+    }
     return { ok: true };
   });
 
@@ -189,7 +216,16 @@ export default async function trackingRoutes(
       .select("id")
       .where("uuid", "=", subscriberUuid)
       .executeTakeFirst();
-    if (subscriber) await unsubscribeFromAllLists(db, subscriber.id);
+    if (subscriber) {
+      const listIds = await unsubscribeFromAllLists(db, subscriber.id);
+      const origin = await resolveUnsubscribeOrigin(db, campaignUuid);
+      await recordUnsubscribe(db, {
+        subscriberId: subscriber.id,
+        ...origin,
+        source: "all",
+        listIds,
+      });
+    }
     return { ok: true };
   });
 }

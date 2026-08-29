@@ -255,6 +255,22 @@ export interface CampaignViewsTable {
   created_at: Generated<Timestamp>;
 }
 
+export type UnsubscribeSource = "one_click" | "preferences" | "all";
+
+/** One row per unsubscribe *action*, for campaigns and automations alike --
+ * `list_ids` carries which lists that single action actually left. At most one
+ * of `campaign_id`/`automation_id` is set; both null means the signed link's
+ * uuid no longer resolves. */
+export interface CampaignUnsubscribesTable {
+  id: Generated<string>;
+  subscriber_id: number | null;
+  campaign_id: number | null;
+  automation_id: number | null;
+  source: UnsubscribeSource;
+  list_ids: Generated<number[]>;
+  created_at: Generated<Timestamp>;
+}
+
 export interface LinksTable {
   id: Generated<number>;
   uuid: Generated<string>;
@@ -372,6 +388,7 @@ export interface Database {
   campaign_connections: CampaignConnectionsTable;
   campaign_emails: CampaignEmailsTable;
   campaign_views: CampaignViewsTable;
+  campaign_unsubscribes: CampaignUnsubscribesTable;
   links: LinksTable;
   link_clicks: LinkClicksTable;
   automations: AutomationsTable;

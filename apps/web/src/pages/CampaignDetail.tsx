@@ -41,6 +41,8 @@ interface Analytics {
   unique_opens: number;
   clicks: number;
   unique_clicks: number;
+  unsubscribes: number;
+  unique_unsubscribes: number;
 }
 
 const EDITABLE: Campaign["status"][] = ["draft", "scheduled", "paused"];
@@ -322,6 +324,15 @@ export default function CampaignDetail() {
                         {analytics.unique_clicks}{" "}
                         <span className="text-muted-foreground text-sm">
                           ({analytics.clicks} total)
+                        </span>
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-muted-foreground">Unsubscribes</div>
+                      <div className="text-xl font-semibold">
+                        {analytics.unique_unsubscribes}{" "}
+                        <span className="text-muted-foreground text-sm">
+                          ({analytics.unsubscribes} total)
                         </span>
                       </div>
                     </div>

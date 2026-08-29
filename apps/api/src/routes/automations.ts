@@ -6,6 +6,7 @@ import { AutomationGraph, orderedNodes } from "../lib/automationGraph.js";
 import { getTrigger, TRIGGERS } from "../automations/triggers.js";
 import { ACTIONS, getAction } from "../automations/actions.js";
 import { enroll, fireEvent, getAutomationOrThrow, recordEvent } from "../services/automations.js";
+import { getAutomationUnsubscribeCounts } from "../services/unsubscribes.js";
 
 const IdParam = z.object({ id: z.coerce.number() });
 
@@ -299,6 +300,15 @@ export default async function automationRoutes(app: FastifyInstance, opts: { db:
           .orderBy("automation_enrollments.id", "desc")
           .limit(200)
           .execute();
+      },
+    );
+
+    adminApp.get(
+      "/api/v1/automations/:id/analytics",
+      { preHandler: adminApp.requirePermission("automations:get") },
+      async (req) => {
+        const { id } = IdParam.parse(req.params);
+        return getAutomationUnsubscribeCounts(db, id);
       },
     );
   });

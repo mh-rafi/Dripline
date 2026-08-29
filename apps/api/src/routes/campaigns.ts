@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { DB } from "../db/kysely.js";
 import type { Config } from "../config.js";
 import { NotFoundError } from "../lib/errors.js";
+import { getCampaignUnsubscribeCounts } from "../services/unsubscribes.js";
 import {
   cancelCampaign,
   reopenCampaign,
@@ -407,7 +408,7 @@ export default async function campaignRoutes(
     { preHandler: app.requirePermission("campaigns:get") },
     async (req) => {
       const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
-      const [opens, uniqueOpens, clicks, uniqueClicks] = await Promise.all([
+      const [opens, uniqueOpens, clicks, uniqueClicks, unsubscribes] = await Promise.all([
         db
           .selectFrom("campaign_views")
           .select(db.fn.countAll().as("count"))
@@ -428,6 +429,7 @@ export default async function campaignRoutes(
           .select(db.fn.count("subscriber_id").distinct().as("count"))
           .where("campaign_id", "=", id)
           .executeTakeFirst(),
+        getCampaignUnsubscribeCounts(db, id),
       ]);
 
       return {
@@ -435,6 +437,7 @@ export default async function campaignRoutes(
         unique_opens: Number(uniqueOpens?.count ?? 0),
         clicks: Number(clicks?.count ?? 0),
         unique_clicks: Number(uniqueClicks?.count ?? 0),
+        ...unsubscribes,
       };
     },
   );

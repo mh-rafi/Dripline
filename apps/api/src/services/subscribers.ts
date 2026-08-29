@@ -147,8 +147,32 @@ export async function removeFromList(db: DB, subscriberId: number, listId: numbe
  * reach here since the page never shows one as a checkbox, but the query
  * still enforces it server-side rather than trusting the submitted ids.
  */
-export async function unsubscribeFromLists(db: DB, subscriberId: number, listIds: number[]) {
-  if (listIds.length === 0) return;
+/**
+ * Returns the lists this call *genuinely* unsubscribed -- memberships already
+ * unsubscribed are excluded. That distinction is what keeps the unsubscribe
+ * metric honest: one-click List-Unsubscribe targets get re-fetched by mail
+ * clients and security scanners, and the preference page can be reloaded, so
+ * counting every request would inflate the number with repeat hits that
+ * changed nothing.
+ */
+export async function unsubscribeFromLists(
+  db: DB,
+  subscriberId: number,
+  listIds: number[],
+): Promise<number[]> {
+  if (listIds.length === 0) return [];
+  // Read before the write rather than using RETURNING, so the UPDATE below
+  // keeps its existing reach -- it also clears pre_blocklist_status on rows
+  // that were already unsubscribed, which this select deliberately skips.
+  const changed = await db
+    .selectFrom("subscriber_lists")
+    .innerJoin("lists", "lists.id", "subscriber_lists.list_id")
+    .select("subscriber_lists.list_id")
+    .where("subscriber_lists.subscriber_id", "=", subscriberId)
+    .where("subscriber_lists.list_id", "in", listIds)
+    .where("subscriber_lists.status", "!=", "unsubscribed")
+    .where("lists.type", "=", "public")
+    .execute();
   await db
     .updateTable("subscriber_lists")
     .set({ status: "unsubscribed", pre_blocklist_status: null })
@@ -164,6 +188,7 @@ export async function unsubscribeFromLists(db: DB, subscriberId: number, listIds
       ),
     )
     .execute();
+  return changed.map((r) => r.list_id);
 }
 
 /**
@@ -173,12 +198,19 @@ export async function unsubscribeFromLists(db: DB, subscriberId: number, listIds
  * subscriber can still be re-added to a list later, unlike a blocklisted
  * record.
  */
-export async function unsubscribeFromAllLists(db: DB, subscriberId: number) {
+export async function unsubscribeFromAllLists(db: DB, subscriberId: number): Promise<number[]> {
+  const changed = await db
+    .selectFrom("subscriber_lists")
+    .select("list_id")
+    .where("subscriber_id", "=", subscriberId)
+    .where("status", "!=", "unsubscribed")
+    .execute();
   await db
     .updateTable("subscriber_lists")
     .set({ status: "unsubscribed", pre_blocklist_status: null })
     .where("subscriber_id", "=", subscriberId)
     .execute();
+  return changed.map((r) => r.list_id);
 }
 
 function getTags(attribs: Record<string, unknown>): string[] {
@@ -248,13 +280,16 @@ export async function unsubscribeFromCampaignLists(
   db: DB,
   subscriberId: number,
   campaignId: number,
-) {
-  await sql`
+): Promise<number[]> {
+  const result = await sql<{ list_id: number }>`
     UPDATE subscriber_lists sl
     SET status = 'unsubscribed'
     FROM campaign_lists cl
     WHERE cl.campaign_id = ${campaignId}
       AND sl.list_id = cl.list_id
       AND sl.subscriber_id = ${subscriberId}
+      AND sl.status <> 'unsubscribed'
+    RETURNING sl.list_id
   `.execute(db);
+  return result.rows.map((r) => r.list_id);
 }
