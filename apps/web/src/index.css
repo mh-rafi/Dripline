@@ -41,6 +41,13 @@
   --color-block-layout-foreground: hsl(0 0% 4%);
   --color-block-layout-border: hsl(0 0% 90%);
 
+  /* Ordinal blue ramp for engagement charts -- one hue, monotone lightness,
+     chart-1 the most engaged step. Validated per mode against its own
+     surface, so the dark values below are re-stepped, not an inversion. */
+  --color-chart-1: hsl(213 78% 28%);
+  --color-chart-2: hsl(213 68% 50%);
+  --color-chart-3: hsl(213 77% 73%);
+
   --font-sans:
     ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
     "Helvetica Neue", Arial, sans-serif;
@@ -110,6 +117,10 @@
     --color-block-layout: hsl(0 0% 9%);
     --color-block-layout-foreground: hsl(0 0% 98%);
     --color-block-layout-border: hsl(0 0% 16%);
+
+    --color-chart-1: hsl(213 80% 79%);
+    --color-chart-2: hsl(213 77% 56%);
+    --color-chart-3: hsl(214 72% 34%);
   }
 
   body {

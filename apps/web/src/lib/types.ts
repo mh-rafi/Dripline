@@ -147,6 +147,32 @@ export interface CampaignEmail {
   clicks: number;
 }
 
+export interface CampaignLinkActivity {
+  url: string;
+  clicks: number;
+  unique_clicks: number;
+}
+
+/** Campaign engagement. Rates are derived client-side from `sent` -- the
+ * industry convention: unique opens/clicks over emails actually sent.
+ * `engagement` is the same population split into three disjoint buckets that
+ * sum to `sent`, so it can be charted as a part-to-whole. */
+export interface CampaignAnalytics {
+  sent: number;
+  opens: number;
+  unique_opens: number;
+  clicks: number;
+  unique_clicks: number;
+  unsubscribes: number;
+  unique_unsubscribes: number;
+  engagement: {
+    clicked: number;
+    opened_not_clicked: number;
+    not_opened: number;
+  };
+  links: CampaignLinkActivity[];
+}
+
 export type UnsubscribeSource = "one_click" | "preferences" | "all";
 
 /** One unsubscribe action. `lists` names the lists left; a list deleted since

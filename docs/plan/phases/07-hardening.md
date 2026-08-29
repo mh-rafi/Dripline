@@ -15,7 +15,13 @@ Tasks:
   We'll implement webhook handler for AWS SES, Resend and others later.
 
 - ~~CSV subscriber import~~ -- done (Phase 1). Double opt-in confirm flow is still open.
-- Campaign analytics polish, public archive pages.
+- Campaign analytics polish -- **done**: the campaign Overview tab now carries a
+  three-panel report (performance rates, an engagement donut, per-link click
+  activity) built on `GET /campaigns/:id/analytics`, which also returns `sent`,
+  a disjoint `engagement` split and a `links` breakdown. Rates use the standard
+  unique-recipient-over-sent denominators (click-to-open over unique openers).
+  Charting is `recharts` (MIT); its ordinal blue ramp lives in `index.css` as
+  `--color-chart-1..3`. Public archive pages are still open.
 - listmonk → Dripline import tool -- script written, never run against a real listmonk
   database.
 - Load testing dispatch engine at realistic list sizes; `campaign_emails` partitioning if

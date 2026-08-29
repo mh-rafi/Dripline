@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api } from "../lib/api.js";
-import type { Campaign, Connection, List, Template } from "../lib/types.js";
+import type { Campaign, CampaignAnalytics, Connection, List, Template } from "../lib/types.js";
 import { useEmailHistory } from "../hooks/useEmailHistory.js";
 import Badge from "../components/Badge.js";
 import ProgressBar from "../components/ProgressBar.js";
@@ -10,6 +10,7 @@ import PreviewModal from "../components/PreviewModal.js";
 import EmailHistoryInput from "../components/EmailHistoryInput.js";
 import CampaignEmailsTable from "../components/CampaignEmailsTable.js";
 import CampaignUnsubscribesTable from "../components/CampaignUnsubscribesTable.js";
+import CampaignReport from "../components/CampaignReport.js";
 import ContentTypeEditor, {
   type ContentType,
   type ContentValue,
@@ -37,21 +38,12 @@ import {
   TabsContent,
 } from "../components/ui/index.js";
 
-interface Analytics {
-  opens: number;
-  unique_opens: number;
-  clicks: number;
-  unique_clicks: number;
-  unsubscribes: number;
-  unique_unsubscribes: number;
-}
-
 const EDITABLE: Campaign["status"][] = ["draft", "scheduled", "paused"];
 
 export default function CampaignDetail() {
   const { id } = useParams();
   const [campaign, setCampaign] = useState<Campaign | null>(null);
-  const [analytics, setAnalytics] = useState<Analytics | null>(null);
+  const [analytics, setAnalytics] = useState<CampaignAnalytics | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -137,7 +129,7 @@ export default function CampaignDetail() {
       setListIds(c.lists?.map((l) => l.id) ?? []);
       setConnectionIds(c.connections?.map((conn) => conn.id) ?? []);
     });
-    api.get<Analytics>(`/campaigns/${id}/analytics`).then(setAnalytics);
+    api.get<CampaignAnalytics>(`/campaigns/${id}/analytics`).then(setAnalytics);
   }
 
   /** Refreshes only the live status/progress display (status badge, send
@@ -147,7 +139,7 @@ export default function CampaignDetail() {
    * every few seconds. */
   function refreshStatus() {
     api.get<Campaign>(`/campaigns/${id}`).then(setCampaign);
-    api.get<Analytics>(`/campaigns/${id}/analytics`).then(setAnalytics);
+    api.get<CampaignAnalytics>(`/campaigns/${id}/analytics`).then(setAnalytics);
   }
 
   useEffect(() => {
@@ -306,38 +298,10 @@ export default function CampaignDetail() {
                 {campaign.progress && <ProgressBar progress={campaign.progress} />}
               </div>
 
-              {analytics && (
+              {analytics && campaign.status !== "draft" && (
                 <div>
-                  <h3 className="mt-0 text-lg font-semibold">Engagement</h3>
-                  <FormRow>
-                    <div>
-                      <div className="text-muted-foreground">Opens</div>
-                      <div className="text-xl font-semibold">
-                        {analytics.unique_opens}{" "}
-                        <span className="text-muted-foreground text-sm">
-                          ({analytics.opens} total)
-                        </span>
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-muted-foreground">Clicks</div>
-                      <div className="text-xl font-semibold">
-                        {analytics.unique_clicks}{" "}
-                        <span className="text-muted-foreground text-sm">
-                          ({analytics.clicks} total)
-                        </span>
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-muted-foreground">Unsubscribes</div>
-                      <div className="text-xl font-semibold">
-                        {analytics.unique_unsubscribes}{" "}
-                        <span className="text-muted-foreground text-sm">
-                          ({analytics.unsubscribes} total)
-                        </span>
-                      </div>
-                    </div>
-                  </FormRow>
+                  <h3 className="mt-0 mb-2 text-lg font-semibold">Report</h3>
+                  <CampaignReport analytics={analytics} />
                 </div>
               )}
 

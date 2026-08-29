@@ -198,8 +198,27 @@ campaign.
 | POST   | `/campaigns/:id/test`         | `{ email, name?, subject?, preheader?, body?, body_source?, content_type?, from_email?, from_name?, reply_to?, template_id? }` → `{ ok, error }`. Sends one-off, using the campaign's _saved_ connections but any overrides passed in -- doesn't persist them or touch `campaign_emails`/progress. `email` need not be an existing subscriber.                                                                               |
 | POST   | `/campaigns/preview`          | `{ subject?, preheader?, body, body_source?, content_type?, template_id? }` → `{ subject, preheader, html }`. Renders the given content the same way a real send would (template wrapper, merge fields, markdown conversion, tracking links against a synthetic subscriber) -- no saved campaign or sending connection required, so it works for a never-saved draft. Doesn't send anything.                                 |
 | GET    | `/campaigns/:id/progress`     | `{ pending, queued, sent, failed, skipped, total }` -- always live, never cached                                                                                                                                                                                                                                                                                                                                             |
-| GET    | `/campaigns/:id/analytics`    | `{ opens, unique_opens, clicks, unique_clicks, unsubscribes, unique_unsubscribes }`                                                                                                                                                                                                                                                                                                                                          |
+| GET    | `/campaigns/:id/analytics`    | `{ sent, opens, unique_opens, clicks, unique_clicks, unsubscribes, unique_unsubscribes, engagement, links }` -- see below                                                                                                                                                                                                                                                                                                    |
 | GET    | `/campaigns/:id/unsubscribes` | `?limit=&offset=` → `{ unsubscribes, total }`. One entry per unsubscribe action: `subscriber_email`/`subscriber_name` (null once the contact is deleted), `source`, `list_ids`, and `lists` — the names for those ids that still resolve, so a list deleted since the unsubscribe leaves the id present with no name.                                                                                                        |
+
+**`/campaigns/:id/analytics`** reports engagement on the _unique recipient_
+basis every ESP uses, so the numbers are comparable to what Mailchimp or
+FluentCRM show for the same send. `sent` (campaign emails with status `sent`)
+is the denominator for open rate, click rate and unsubscribe rate;
+click-to-open is unique clicks over unique openers. The raw `opens`/`clicks`
+totals are kept alongside for the "N total" detail.
+
+`engagement` is the same population split into three **disjoint** buckets that
+sum to `sent`, so the campaign screen can chart it as a part-to-whole:
+`clicked` (unique clickers), `opened_not_clicked` (opened, never clicked), and
+`not_opened` (the remainder). A click with no recorded open is normal -- images
+blocked, so the pixel never fired -- which is why the buckets come from set
+membership rather than subtracting one count from the other, and why
+`not_opened` is clamped at zero.
+
+`links` is the per-URL click breakdown, `{ url, clicks, unique_clicks }`
+ordered by unique clicks descending and capped at 50 rows (the endpoint is
+polled every few seconds while a campaign runs).
 
 **`preheader`** is the inbox-preview snippet shown next to the subject in the
 recipient's mail client list -- it never appears inside the opened email.

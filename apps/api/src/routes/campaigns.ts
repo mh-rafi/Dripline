@@ -22,6 +22,11 @@ import {
 
 const ContentType = z.enum(["richtext", "html", "plain", "markdown", "visual"]);
 
+// The analytics endpoint is polled every few seconds by the campaign screen,
+// so the per-link breakdown is capped rather than returning every URL an
+// email body ever contained.
+const LINK_ACTIVITY_LIMIT = 50;
+
 const CreateCampaignShape = z.object({
   name: z.string().min(1),
   subject: z.string().min(1),
@@ -411,7 +416,22 @@ export default async function campaignRoutes(
     { preHandler: app.requirePermission("campaigns:get") },
     async (req) => {
       const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
-      const [opens, uniqueOpens, clicks, uniqueClicks, unsubscribes] = await Promise.all([
+      const [
+        sent,
+        opens,
+        uniqueOpens,
+        clicks,
+        uniqueClicks,
+        openedNotClicked,
+        unsubscribes,
+        links,
+      ] = await Promise.all([
+        db
+          .selectFrom("campaign_emails")
+          .select(db.fn.countAll().as("count"))
+          .where("campaign_id", "=", id)
+          .where("status", "=", "sent")
+          .executeTakeFirst(),
         db
           .selectFrom("campaign_views")
           .select(db.fn.countAll().as("count"))
@@ -431,15 +451,69 @@ export default async function campaignRoutes(
           .selectFrom("link_clicks")
           .select(db.fn.count("subscriber_id").distinct().as("count"))
           .where("campaign_id", "=", id)
+          .executeTakeFirst(),
+        // Openers who never clicked. NOT EXISTS rather than NOT IN because
+        // both tables allow a null subscriber_id (the contact was deleted),
+        // and NOT IN over a set containing null matches nothing at all.
+        db
+          .selectFrom("campaign_views")
+          .select(db.fn.count("campaign_views.subscriber_id").distinct().as("count"))
+          .where("campaign_views.campaign_id", "=", id)
+          .where((eb) =>
+            eb.not(
+              eb.exists(
+                eb
+                  .selectFrom("link_clicks")
+                  .select("link_clicks.id")
+                  .where("link_clicks.campaign_id", "=", id)
+                  .whereRef("link_clicks.subscriber_id", "=", "campaign_views.subscriber_id"),
+              ),
+            ),
+          )
           .executeTakeFirst(),
         getCampaignUnsubscribeCounts(db, id),
+        db
+          .selectFrom("link_clicks")
+          .innerJoin("links", "links.id", "link_clicks.link_id")
+          .select([
+            "links.url as url",
+            db.fn.countAll().as("clicks"),
+            db.fn.count("link_clicks.subscriber_id").distinct().as("unique_clicks"),
+          ])
+          .where("link_clicks.campaign_id", "=", id)
+          .groupBy("links.url")
+          .orderBy(sql`count(distinct link_clicks.subscriber_id)`, "desc")
+          .orderBy("links.url", "asc")
+          .limit(LINK_ACTIVITY_LIMIT)
+          .execute(),
       ]);
 
+      const sentCount = Number(sent?.count ?? 0);
+      const uniqueOpensCount = Number(uniqueOpens?.count ?? 0);
+      const uniqueClicksCount = Number(uniqueClicks?.count ?? 0);
+      const openedNotClickedCount = Number(openedNotClicked?.count ?? 0);
+
       return {
+        sent: sentCount,
         opens: Number(opens?.count ?? 0),
-        unique_opens: Number(uniqueOpens?.count ?? 0),
+        unique_opens: uniqueOpensCount,
         clicks: Number(clicks?.count ?? 0),
-        unique_clicks: Number(uniqueClicks?.count ?? 0),
+        unique_clicks: uniqueClicksCount,
+        // The three buckets the engagement chart splits `sent` into. A click
+        // without a recorded open is normal (images blocked, pixel never
+        // loaded), so these are derived from set membership rather than by
+        // subtracting opens from clicks -- and `not_opened` is clamped, since
+        // clicks can outnumber tracked sends on a re-sent campaign.
+        engagement: {
+          clicked: uniqueClicksCount,
+          opened_not_clicked: openedNotClickedCount,
+          not_opened: Math.max(0, sentCount - uniqueClicksCount - openedNotClickedCount),
+        },
+        links: links.map((link) => ({
+          url: link.url,
+          clicks: Number(link.clicks),
+          unique_clicks: Number(link.unique_clicks),
+        })),
         ...unsubscribes,
       };
     },
