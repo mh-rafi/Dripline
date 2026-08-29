@@ -159,6 +159,16 @@ tracks progress via `connections.bounce_last_uid`/`bounce_last_uidvalidity`
 `POST /connections/bounce-test` (unsaved draft) check reachability only,
 same as the existing `/test` endpoints for sending config.
 
+Both `:id` test endpoints accept an optional body of unsaved edits --
+`{ type?, config? }` for `/test`, plus `bounce_config?` for `/bounce-test` --
+merged onto the stored row before testing, so the admin UI can test what is
+on screen without saving first. Omitted secrets fall back to the stored ones
+under the same "empty means keep" rule as `PATCH`, which is what makes this
+usable at all: the UI blanks a masked password field, so the draft it sends
+never carries the real credential. Sending an empty body tests the saved row
+exactly as before. Neither endpoint writes anything, and neither disturbs the
+pooled sender that real sends use.
+
 A separate bounce mailbox (`use_sending_credentials: false`) also makes
 outgoing sends through that connection carry an envelope-from (Return-Path)
 override pointing at `bounce_config.email`, so DSNs actually route there --

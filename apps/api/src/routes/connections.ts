@@ -9,12 +9,7 @@ import type {
   SmtpConnectionConfig,
 } from "../db/types.js";
 import { BadRequestError, NotFoundError } from "../lib/errors.js";
-import {
-  createSender,
-  type Connection,
-  getSenderFor,
-  invalidateSender,
-} from "../services/connections.js";
+import { createSender, type Connection, invalidateSender } from "../services/connections.js";
 import { resolveBounceMailbox, testBounceMailbox } from "../services/bounceScanner.js";
 
 const TlsMode = z.enum(["none", "starttls", "tls"]);
@@ -425,20 +420,41 @@ export default async function connectionRoutes(app: FastifyInstance, opts: { db:
     },
   );
 
-  // Test a saved connection's credentials/reachability.
+  /** Unsaved edits from the form, merged onto the saved row before testing --
+   * so "Test" checks what is on screen, not what was last saved. Omitted
+   * secrets fall back to the stored ones through mergeConfig, which is what
+   * makes this work at all: the UI blanks a masked password field, so the
+   * draft it sends never carries the real credential. */
+  const TestOverride = z.object({
+    type: ConnectionTypeSchema.optional(),
+    config: z.unknown().optional(),
+  });
+
+  // Tests a saved connection, optionally with unsaved edits applied on top.
   app.post(
     "/api/v1/connections/:id/test",
     { preHandler: app.requirePermission("connections:manage") },
     async (req) => {
       const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
+      const override = TestOverride.parse(req.body ?? {});
       const row = await db
         .selectFrom("connections")
         .selectAll()
         .where("id", "=", id)
         .executeTakeFirst();
       if (!row) throw new NotFoundError("connection");
+      const draft = {
+        ...row,
+        config:
+          override.config !== undefined
+            ? mergeConfig(row as unknown as ConnectionRow, override.config)
+            : row.config,
+      };
       try {
-        const sender = getSenderFor(row as unknown as Connection);
+        // createSender, not getSenderFor: the latter caches by connection id,
+        // which would both ignore the draft config and risk installing a
+        // draft-configured sender into the cache that real sends use.
+        const sender = createSender(draft.type, draft.config as ConnectionConfig);
         await sender.verify();
         return { ok: true, error: null };
       } catch (err) {
@@ -470,18 +486,35 @@ export default async function connectionRoutes(app: FastifyInstance, opts: { db:
   // the scanner's own read-only guarantee (see
   // docs/plan/mailbox_bounce_scanning.md §5/§6 -- this cannot verify that a
   // *separate* mailbox actually receives bounces, only that it's reachable).
+  const BounceTestOverride = TestOverride.extend({ bounce_config: BounceConfig.optional() });
+
   app.post(
     "/api/v1/connections/:id/bounce-test",
     { preHandler: app.requirePermission("connections:manage") },
     async (req) => {
       const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
+      const override = BounceTestOverride.parse(req.body ?? {});
       const row = await db
         .selectFrom("connections")
         .selectAll()
         .where("id", "=", id)
         .executeTakeFirst();
       if (!row) throw new NotFoundError("connection");
-      const mailbox = resolveBounceMailbox(row as unknown as Connection);
+      // The sending config is merged too, not just bounce_config: with
+      // use_sending_credentials on, resolveBounceMailbox logs in with the SMTP
+      // username/password, so an unsaved edit there changes the mailbox test.
+      const draft = {
+        ...row,
+        config:
+          override.config !== undefined
+            ? mergeConfig(row as unknown as ConnectionRow, override.config)
+            : row.config,
+        bounce_config:
+          override.bounce_config !== undefined
+            ? mergeBounceConfig(row.bounce_config, override.bounce_config)
+            : row.bounce_config,
+      };
+      const mailbox = resolveBounceMailbox(draft as unknown as Connection);
       if (!mailbox) return { ok: false, error: "bounce mailbox scanning is not configured" };
       try {
         await testBounceMailbox(mailbox);

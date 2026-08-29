@@ -207,13 +207,14 @@ export default function ConnectionForm() {
     setTesting(true);
     setTestResult(null);
     try {
+      // Always send what is on screen. For a saved connection the API merges
+      // it onto the stored row, so an unsaved edit is what gets tested and a
+      // masked-out password still falls back to the saved one.
+      const payload = { type: form.type, config: buildConfig(form) };
       const result =
         form.id !== undefined
-          ? await api.post<TestState>(`/connections/${form.id}/test`)
-          : await api.post<TestState>("/connections/test", {
-              type: form.type,
-              config: buildConfig(form),
-            });
+          ? await api.post<TestState>(`/connections/${form.id}/test`, payload)
+          : await api.post<TestState>("/connections/test", payload);
       setTestResult(result);
     } catch (err) {
       setTestResult({
@@ -229,14 +230,15 @@ export default function ConnectionForm() {
     setBounceTesting(true);
     setBounceTestResult(null);
     try {
+      const payload = {
+        type: form.type,
+        config: buildConfig(form),
+        bounce_config: buildBounceConfig(form),
+      };
       const result =
         form.id !== undefined
-          ? await api.post<TestState>(`/connections/${form.id}/bounce-test`)
-          : await api.post<TestState>("/connections/bounce-test", {
-              type: form.type,
-              config: buildConfig(form),
-              bounce_config: buildBounceConfig(form),
-            });
+          ? await api.post<TestState>(`/connections/${form.id}/bounce-test`, payload)
+          : await api.post<TestState>("/connections/bounce-test", payload);
       setBounceTestResult(result);
     } catch (err) {
       setBounceTestResult({
