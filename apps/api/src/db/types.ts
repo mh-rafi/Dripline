@@ -205,6 +205,9 @@ export interface CampaignsTable {
   /** Original editor source (markdown text, visual builder JSON, or a mirror
    * of `body` for richtext/html/plain). `body` is always the final HTML. */
   body_source: string | null;
+  /** Hand-written text/plain alternative part. Null means derive it from the
+   * rendered HTML at send time -- see lib/htmlToText.ts. */
+  alt_body: string | null;
   content_type: Generated<CampaignContentType>;
   status: Generated<CampaignStatus>;
   send_at: Timestamp | null;

@@ -10,7 +10,7 @@ import type {
 } from "../db/types.js";
 import { BadRequestError, NotFoundError } from "../lib/errors.js";
 import { markdownToHtml } from "../lib/markdown.js";
-import { renderCampaignEmail } from "./mailer.js";
+import { plainTextPreviewHtml, renderCampaignEmail } from "./mailer.js";
 import { getConnectionChain, sendWithChain } from "./connections.js";
 
 const ALLOWED_TRANSITIONS: Record<CampaignStatus, CampaignStatus[]> = {
@@ -243,6 +243,7 @@ export interface TestEmailOverrides {
   preheader?: string | null;
   body?: string;
   body_source?: string | null;
+  alt_body?: string | null;
   content_type?: CampaignContentType;
   from_email?: string | null;
   from_name?: string | null;
@@ -274,6 +275,7 @@ export async function sendTestEmail(
     preheader: overrides.preheader !== undefined ? overrides.preheader : saved.preheader,
     body: overrides.body ?? saved.body,
     body_source: overrides.body_source !== undefined ? overrides.body_source : saved.body_source,
+    alt_body: overrides.alt_body !== undefined ? overrides.alt_body : saved.alt_body,
     content_type: overrides.content_type ?? saved.content_type,
     from_email: overrides.from_email !== undefined ? overrides.from_email : saved.from_email,
     from_name: overrides.from_name !== undefined ? overrides.from_name : saved.from_name,
@@ -313,6 +315,7 @@ export async function sendTestEmail(
     to: toEmail,
     subject: rendered.subject,
     html: rendered.html,
+    text: rendered.text,
     fromOverride: campaign.from_email,
     fromNameOverride: campaign.from_name,
     replyTo: campaign.reply_to,
@@ -378,6 +381,9 @@ export async function previewCampaign(
     subject: input.subject ?? "",
     preheader: input.preheader ?? null,
     body,
+    // The preview pane shows the HTML part, so a hand-written text
+    // alternative has nothing to render here.
+    alt_body: null,
     content_type,
     track_opens: true,
     track_clicks: true,
@@ -385,5 +391,11 @@ export async function previewCampaign(
 
   const subscriber = syntheticSubscriber("preview@example.com", "Preview Subscriber");
   const rendered = await renderCampaignEmail(db, config, campaign, template ?? null, subscriber);
-  return { subject: rendered.subject, preheader: rendered.preheader, html: rendered.html };
+  return {
+    subject: rendered.subject,
+    preheader: rendered.preheader,
+    // A plain-text campaign has no HTML part to show, so the preview pane gets
+    // the text one wrapped for display.
+    html: rendered.html || plainTextPreviewHtml(rendered.text),
+  };
 }

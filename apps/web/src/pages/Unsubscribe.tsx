@@ -9,9 +9,14 @@ interface PreferenceData {
 }
 
 export default function Unsubscribe() {
-  const { campaignUuid, subscriberUuid } = useParams();
+  // Two URL shapes reach this page: the short /u/:ref/:sub/:sig one that new
+  // mail carries, and the older /unsubscribe/:campaignUuid/:subscriberUuid?sig=
+  // one that already-delivered mail still does. Each has its own endpoints,
+  // since the ids they carry aren't the same.
+  const { campaignUuid, subscriberUuid, ref, sub, sig: pathSig } = useParams();
   const [searchParams] = useSearchParams();
-  const sig = searchParams.get("sig") ?? "";
+  const short = ref !== undefined;
+  const sig = short ? (pathSig ?? "") : (searchParams.get("sig") ?? "");
 
   const [data, setData] = useState<PreferenceData | null>(null);
   const [checked, setChecked] = useState<Set<number>>(new Set());
@@ -20,18 +25,20 @@ export default function Unsubscribe() {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<string | null>(null);
 
-  const base = `/unsubscribe/${campaignUuid}/${subscriberUuid}`;
+  const base = short ? `/u/${ref}/${sub}/${sig}` : `/unsubscribe/${campaignUuid}/${subscriberUuid}`;
+  // The short form signs the whole path, so there is no query string to add.
+  const listsUrl = short ? `${base}/lists` : `${base}/lists?sig=${encodeURIComponent(sig)}`;
 
   useEffect(() => {
     api
-      .get<PreferenceData>(`${base}/lists?sig=${encodeURIComponent(sig)}`)
+      .get<PreferenceData>(listsUrl)
       .then((result) => {
         setData(result);
         setChecked(new Set(result.lists.map((l) => l.id)));
       })
       .catch((err) => setError(err instanceof Error ? err.message : "invalid unsubscribe link"))
       .finally(() => setLoading(false));
-  }, [campaignUuid, subscriberUuid, sig]);
+  }, [listsUrl]);
 
   function toggle(id: number) {
     setChecked((ids) => {

@@ -99,6 +99,9 @@ export interface Campaign {
   preheader: string | null;
   body: string;
   body_source: string | null;
+  /** Hand-written plain-text alternative. Null means it's generated from the
+   * HTML at send time. */
+  alt_body: string | null;
   content_type: ContentType;
   status: CampaignStatus;
   from_email: string | null;

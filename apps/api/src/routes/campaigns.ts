@@ -38,6 +38,9 @@ const CreateCampaignShape = z.object({
   // Original editor source (markdown text, visual builder JSON, or a mirror
   // of `body` for richtext/html/plain). See db/types.ts CampaignsTable.
   body_source: z.string().nullish(),
+  // Hand-written text/plain alternative. Omitted or blank means it's derived
+  // from the rendered HTML at send time -- see lib/htmlToText.ts.
+  alt_body: z.string().nullish(),
   content_type: ContentType.default("richtext"),
   from_email: z.string().email().optional(),
   from_name: z.string().optional(),
@@ -75,6 +78,7 @@ const UpdateCampaign = CreateCampaignShape.partial()
     // sends `null` for "None"/"unlimited"), not just omit the fields.
     template_id: z.number().int().nullable().optional(),
     preheader: z.string().nullable().optional(),
+    alt_body: z.string().nullable().optional(),
     from_name: z.string().nullable().optional(),
     reply_to: z
       .union([z.string().email(), z.literal("")])
@@ -109,6 +113,7 @@ const TestEmail = z.object({
   preheader: z.string().nullish(),
   body: z.string().optional(),
   body_source: z.string().nullish(),
+  alt_body: z.string().nullish(),
   content_type: ContentType.optional(),
   from_email: z.string().email().nullish(),
   // Empty string clears the override; the DB stores null for "not set" so the
@@ -209,6 +214,7 @@ export default async function campaignRoutes(
           preheader: body.preheader || null,
           body: body.body,
           body_source: body.body_source ?? null,
+          alt_body: body.alt_body || null,
           content_type: body.content_type,
           from_email: body.from_email ?? null,
           from_name: body.from_name || null,
@@ -260,6 +266,7 @@ export default async function campaignRoutes(
         .set({
           ...body,
           ...(body.preheader !== undefined ? { preheader: body.preheader || null } : {}),
+          ...(body.alt_body !== undefined ? { alt_body: body.alt_body || null } : {}),
           ...(body.from_name !== undefined ? { from_name: body.from_name || null } : {}),
           ...(body.reply_to !== undefined ? { reply_to: body.reply_to || null } : {}),
         })

@@ -3,7 +3,14 @@ import type { Config } from "../config.js";
 import type { Selectable } from "kysely";
 import type { CampaignsTable, SubscribersTable, TemplatesTable } from "../db/types.js";
 import { appendOpenPixel, extractLinks, renderTemplate, rewriteLinks } from "../lib/template.js";
-import { sign } from "../lib/signing.js";
+import { htmlToText } from "../lib/htmlToText.js";
+import {
+  clickUrl,
+  openPixelUrl,
+  unsubscribeOneClickUrl,
+  unsubscribePageUrl,
+  unsubscribeRef,
+} from "../lib/trackingUrls.js";
 
 type Campaign = Selectable<CampaignsTable>;
 type Subscriber = Selectable<SubscribersTable>;
@@ -15,7 +22,12 @@ export interface RenderedEmail {
    * a hidden div there too, but callers building an inbox-style preview (see
    * PreviewModal) need the plain text on its own. */
   preheader: string;
+  /** Empty for a plain-text campaign, which sends `text` as its only part. */
   html: string;
+  /** The text/plain alternative. Never empty -- an HTML-only message carries a
+   * standing SpamAssassin penalty. From the campaign's `alt_body` when one is
+   * set, otherwise derived from the rendered HTML. */
+  text: string;
   unsubscribeUrl: string;
 }
 
@@ -40,40 +52,52 @@ function injectPreheader(html: string, preheader: string): string {
   return html.slice(0, insertAt) + hidden + html.slice(insertAt);
 }
 
-// Same signature backs both URLs -- one endpoint (the RFC 8058 one-click
-// target for mail clients / the List-Unsubscribe header), one page (what a
-// human clicks in the body, offering per-list choice). See
-// docs/plan/DEVELOPMENT_PLAN.md for why these are split.
-function unsubscribeUrl(config: Config, subscriber: Subscriber, campaign: Campaign): string {
-  const sig = sign(config.trackingSecret, [subscriber.uuid, campaign.uuid]);
-  return `${config.appUrl}/api/v1/unsubscribe/${campaign.uuid}/${subscriber.uuid}?sig=${sig}`;
+/**
+ * Interns a batch of destination URLs and hands back their `links` ids, which
+ * is what a tracked click URL carries now -- the destination itself used to be
+ * URL-encoded into the query string, and on its own pushed those links past
+ * the length SpamAssassin penalizes.
+ */
+export async function resolveLinkIds(db: DB, urls: string[]): Promise<Map<string, number>> {
+  if (urls.length === 0) return new Map();
+  const rows = await db
+    .insertInto("links")
+    .values(urls.map((url) => ({ url })))
+    // A no-op update rather than doNothing: RETURNING skips rows that a
+    // doNothing conflict discards, and the ids of already-known links are
+    // exactly what this needs back.
+    .onConflict((oc) => oc.column("url").doUpdateSet((eb) => ({ url: eb.ref("excluded.url") })))
+    .returning(["id", "url"])
+    .execute();
+  return new Map(rows.map((r) => [r.url, r.id]));
 }
 
-function unsubscribePageUrl(config: Config, subscriber: Subscriber, campaign: Campaign): string {
-  const sig = sign(config.trackingSecret, [subscriber.uuid, campaign.uuid]);
-  return `${config.appUrl}/unsubscribe/${campaign.uuid}/${subscriber.uuid}?sig=${sig}`;
-}
-
-function openPixelUrl(config: Config, subscriber: Subscriber, campaign: Campaign): string {
-  const sig = sign(config.trackingSecret, [subscriber.uuid, campaign.uuid, "open"]);
-  return `${config.appUrl}/api/v1/track/open/${campaign.uuid}/${subscriber.uuid}?sig=${sig}`;
-}
-
-function clickUrl(
-  config: Config,
-  subscriber: Subscriber,
+/**
+ * The link set is the same for every recipient of a campaign, so a dispatch
+ * batch resolves it once instead of re-interning every URL per subscriber.
+ * Hrefs holding a merge field are skipped -- their final value differs per
+ * recipient, so renderCampaignEmail resolves those on demand.
+ */
+export async function precomputeLinkIds(
+  db: DB,
   campaign: Campaign,
-  targetUrl: string,
-): string {
-  const sig = sign(config.trackingSecret, [subscriber.uuid, campaign.uuid, targetUrl]);
-  return `${config.appUrl}/api/v1/track/click/${campaign.uuid}/${subscriber.uuid}?url=${encodeURIComponent(
-    targetUrl,
-  )}&sig=${sig}`;
+  template: Template | null,
+): Promise<Map<string, number>> {
+  if (!campaign.track_clicks || campaign.content_type === "plain") return new Map();
+  const body = template ? template.body.replace("{{ Body }}", campaign.body) : campaign.body;
+  return resolveLinkIds(
+    db,
+    extractLinks(body).filter((url) => !url.includes("{{")),
+  );
 }
 
 /**
  * Renders a campaign's body for one subscriber: merge fields, click-tracked
- * links (registered in `links` for later resolution), and an open pixel.
+ * links (registered in `links` for later resolution), an open pixel, and the
+ * text/plain alternative part.
+ *
+ * `linkIds` is an optional pre-resolved url -> link id map from
+ * precomputeLinkIds; anything missing from it is resolved here.
  */
 export async function renderCampaignEmail(
   db: DB,
@@ -81,9 +105,11 @@ export async function renderCampaignEmail(
   campaign: Campaign,
   template: Template | null,
   subscriber: Subscriber,
+  linkIds?: Map<string, number>,
 ): Promise<RenderedEmail> {
-  const unsubUrl = unsubscribeUrl(config, subscriber, campaign);
-  const unsubPageUrl = unsubscribePageUrl(config, subscriber, campaign);
+  const ref = unsubscribeRef("campaign", campaign.id);
+  const unsubUrl = unsubscribeOneClickUrl(config, ref, subscriber.id);
+  const unsubPageUrl = unsubscribePageUrl(config, ref, subscriber.id);
   const context = {
     Subscriber: {
       ID: subscriber.id,
@@ -109,54 +135,68 @@ export async function renderCampaignEmail(
   // Plain-text campaigns skip HTML-specific processing entirely -- no open
   // pixel, no link-tracking rewrite (there's nothing resembling <a href> to
   // find anyway), and merge fields are substituted directly against the
-  // literal text. The result is escaped and wrapped in <pre> so the single
-  // HTML part renders as plain text rather than being interpreted as markup
-  // (a genuine multipart text/plain part is a possible future improvement --
-  // see docs/plan/DEVELOPMENT_PLAN.md).
+  // literal text. The result is sent as a genuine text/plain message with no
+  // HTML part at all.
   if (campaign.content_type === "plain") {
     // The hidden-div technique is HTML-only -- a plain-text email has no
     // markup to hide anything in, and clients already show a snippet of the
     // real first line for these, so preheader is silently skipped rather
     // than surfaced as an error.
-    const text = renderTemplate(body, context);
-    const html = `<pre style="white-space:pre-wrap;font-family:inherit;margin:0">${escapeHtml(text)}</pre>`;
     return {
       subject: renderTemplate(campaign.subject, context),
       preheader: "",
-      html,
+      html: "",
+      text: renderTemplate(body, context),
       unsubscribeUrl: unsubUrl,
     };
   }
 
   const preheader = campaign.preheader ? renderTemplate(campaign.preheader, context) : "";
-  let html = injectPreheader(renderTemplate(body, context), preheader);
+  let html = renderTemplate(body, context);
 
   if (campaign.track_clicks) {
     // The unsubscribe link must never be wrapped in click-tracking below, or
     // clicking it would log a spurious "link click" (and could even fire a
     // link_clicked automation trigger) before redirecting.
     const links = extractLinks(html).filter((url) => url !== unsubPageUrl);
-    if (links.length > 0) {
-      await db
-        .insertInto("links")
-        .values(links.map((url) => ({ url })))
-        .onConflict((oc) => oc.column("url").doNothing())
-        .execute();
-    }
-    html = rewriteLinks(html, (url) =>
-      url === unsubPageUrl ? undefined : clickUrl(config, subscriber, campaign, url),
-    );
+    const known = linkIds ?? new Map<string, number>();
+    const missing = links.filter((url) => !known.has(url));
+    const resolved = missing.length > 0 ? await resolveLinkIds(db, missing) : null;
+    html = rewriteLinks(html, (url) => {
+      if (url === unsubPageUrl) return undefined;
+      const linkId = known.get(url) ?? resolved?.get(url);
+      return linkId === undefined
+        ? undefined
+        : clickUrl(config, { campaignId: campaign.id, subscriberId: subscriber.id, linkId });
+    });
   }
+
+  // Derived from the link-rewritten HTML but before the preheader and pixel go
+  // in: the text part should carry the same destinations a recipient would
+  // click, and none of the markup that only exists to be invisible.
+  const text = campaign.alt_body ? renderTemplate(campaign.alt_body, context) : htmlToText(html);
+
+  html = injectPreheader(html, preheader);
   if (campaign.track_opens) {
-    html = appendOpenPixel(html, openPixelUrl(config, subscriber, campaign));
+    html = appendOpenPixel(
+      html,
+      openPixelUrl(config, { campaignId: campaign.id, subscriberId: subscriber.id }),
+    );
   }
 
   return {
     subject: renderTemplate(campaign.subject, context),
     preheader,
     html,
+    text,
     unsubscribeUrl: unsubUrl,
   };
+}
+
+/** A plain-text campaign has no HTML part, but the preview pane still needs
+ * something to render. */
+export function plainTextPreviewHtml(text: string): string {
+  return `<pre style="white-space:pre-wrap;font-family:inherit;margin:0">${escapeHtml(text)}</pre>`;
 }
 
 function escapeHtml(s: string): string {

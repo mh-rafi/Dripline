@@ -41,6 +41,9 @@ export default function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />
+      <Route path="/u/:ref/:sub/:sig" element={<Unsubscribe />} />
+      {/* The older, uuid-based unsubscribe link. Mail carrying it can still
+          be sitting in someone's inbox, so this route stays. */}
       <Route path="/unsubscribe/:campaignUuid/:subscriberUuid" element={<Unsubscribe />} />
       <Route
         element={

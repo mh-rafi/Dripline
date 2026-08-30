@@ -15,6 +15,7 @@ import {
   BlockLayout,
   Button,
   Input,
+  Textarea,
   Select,
   SelectTrigger,
   SelectValue,
@@ -40,6 +41,7 @@ export default function CampaignNew() {
   const [name, setName] = useState("");
   const [subject, setSubject] = useState("");
   const [preheader, setPreheader] = useState("");
+  const [altBody, setAltBody] = useState("");
   const [contentType, setContentType] = useState<ContentType>("richtext");
   const [content, setContent] = useState<ContentValue>({
     body: "<p>Hi {{ Subscriber.Name }},</p>\n<p>...</p>",
@@ -147,6 +149,7 @@ export default function CampaignNew() {
       preheader: preheader || undefined,
       body: content.body,
       body_source: content.body_source,
+      alt_body: altBody || null,
       content_type: contentType,
       from_email: fromEmail || undefined,
       from_name: fromName || undefined,
@@ -337,6 +340,23 @@ export default function CampaignNew() {
                   {previewError && <span className="text-destructive text-sm">{previewError}</span>}
                 </div>
               </div>
+
+              {contentType !== "plain" && (
+                <div className="space-y-2">
+                  <FormLabel>Plain-text version (optional)</FormLabel>
+                  <Textarea
+                    rows={6}
+                    placeholder="Leave empty to generate it automatically from the HTML"
+                    value={altBody}
+                    onChange={(e) => setAltBody(e.target.value)}
+                  />
+                  <p className="text-muted-foreground text-xs">
+                    Every email is sent with both an HTML and a plain-text part &mdash; HTML-only
+                    mail scores worse with spam filters. This one is written for you from the HTML
+                    unless you fill it in here. Merge fields work the same way.
+                  </p>
+                </div>
+              )}
 
               <div className="space-y-2">
                 <FormLabel>Send test email</FormLabel>

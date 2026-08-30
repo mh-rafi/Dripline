@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import nodemailer, { type Transporter } from "nodemailer";
 import type { Selectable } from "kysely";
 import type { DB } from "../db/kysely.js";
@@ -18,6 +19,10 @@ export interface SendInput {
   to: string;
   subject: string;
   html: string;
+  /** The text/plain alternative part. Always set for campaign and automation
+   * mail -- an HTML-only message is a standing SpamAssassin penalty
+   * (MIME_HTML_ONLY). See docs/plan/deliverability.md. */
+  text?: string;
   /** Overrides the connection's from_email (e.g. a campaign-level From). */
   fromOverride?: string | null;
   /** Overrides the display name shown beside the From address. Valid on its
@@ -48,7 +53,14 @@ export interface SendMailInput {
   from: string;
   subject: string;
   html: string;
+  /** Paired with `html` this produces multipart/alternative. On its own
+   * (empty `html`) it produces a genuine text/plain message, which is what a
+   * plain-text campaign sends. */
+  text?: string;
   replyTo?: string;
+  /** RFC 2822 Message-ID, angle brackets included. SMTP only -- SES replaces
+   * whatever it is given, so SesSender ignores it. */
+  messageId?: string;
   headers?: Record<string, string>;
   /** SMTP envelope MAIL FROM override, independent of the visible `from`
    * header -- only meaningful for SmtpSender; SES has no equivalent here
@@ -92,8 +104,10 @@ class SmtpSender implements ConnectionSender {
       from: input.from,
       to: input.to,
       subject: input.subject,
-      html: input.html,
+      ...(input.html ? { html: input.html } : {}),
+      ...(input.text ? { text: input.text } : {}),
       replyTo: input.replyTo,
+      messageId: input.messageId,
       headers: input.headers,
       ...(input.envelopeFrom ? { envelope: { from: input.envelopeFrom, to: input.to } } : {}),
     });
@@ -146,7 +160,10 @@ class SesSender implements ConnectionSender {
       Content: {
         Simple: {
           Subject: { Data: input.subject },
-          Body: { Html: { Data: input.html } },
+          Body: {
+            ...(input.html ? { Html: { Data: input.html } } : {}),
+            ...(input.text ? { Text: { Data: input.text } } : {}),
+          },
           Headers: headers,
         },
       },
@@ -246,6 +263,18 @@ function listUnsubscribeHeaders(
   };
 }
 
+/** Chosen here rather than left to nodemailer so the id's domain is always
+ * the sending identity's, and so campaign_emails.message_id holds a value we
+ * picked instead of one the transport happened to echo back -- which is what
+ * bounceScanner matches DSNs against. SES ignores it and mints its own. */
+function generateMessageId(from: string): string {
+  // `from` is a formatted address ("Name" <a@b>), and the display name can
+  // itself contain an @ -- take what's inside the angle brackets first.
+  const address = from.match(/<([^>]+)>/)?.[1] ?? from;
+  const domain = address.split("@")[1]?.trim() || "localhost";
+  return `<${randomUUID()}@${domain}>`;
+}
+
 /** SMTP envelope-from override for connections with a separate bounce
  * mailbox -- see docs/plan/mailbox_bounce_scanning.md §2.3. Only meaningful
  * when bounce scanning is enabled AND pointed at a mailbox other than this
@@ -323,13 +352,16 @@ export async function sendThroughConnection(
   }
 
   const sender = getSenderFor(connection);
+  const from = fromAddress(connection, input.fromOverride, input.fromNameOverride);
   try {
     const { messageId } = await sender.send({
       to: input.to,
-      from: fromAddress(connection, input.fromOverride, input.fromNameOverride),
+      from,
       subject: input.subject,
       html: input.html,
+      text: input.text,
       replyTo: input.replyTo ?? connection.reply_to ?? undefined,
+      messageId: generateMessageId(from),
       headers: listUnsubscribeHeaders(connection, input.unsubscribeUrl),
       envelopeFrom: bounceEnvelopeFrom(connection),
     });

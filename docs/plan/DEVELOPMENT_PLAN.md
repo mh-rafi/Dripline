@@ -36,6 +36,9 @@ planned. Phases are built roughly in order; dependencies are noted in each file.
 - [roles_and_permissions.md](roles_and_permissions.md) -- granular per-resource roles, a
   user/API account type split, and API tokens scoped by role (Phase 1 addendum, replaces
   its original unscoped API keys). Built and verified.
+- [deliverability.md](deliverability.md) -- message shape: a text/plain part on every
+  send (plus a per-campaign override), a Message-ID we choose, and tracking URLs short
+  enough not to be penalized (Phase 7 addendum). Built and verified.
 - [media_uploads.md](media_uploads.md) -- media library (S3 / S3-compatible) plus the
   first instance-settings surface that configures it (Phase 6 addendum). Built and
   verified; a filesystem provider, thumbnails and an editor media picker are not started.

@@ -14,6 +14,10 @@ export default defineConfig({
     port: 5173,
     proxy: {
       "/api": "http://localhost:3000",
+      // Short click/open tracking routes. Regex-anchored rather than a plain
+      // "/l" prefix, which would also swallow /login and /lists.
+      "^/l/.*": "http://localhost:3000",
+      "^/o/.*": "http://localhost:3000",
     },
   },
 });

@@ -4,7 +4,7 @@ import type { DB } from "../db/kysely.js";
 import type { Config } from "../config.js";
 import { mapLimit } from "../lib/concurrency.js";
 import { markdownToHtml } from "../lib/markdown.js";
-import { renderCampaignEmail } from "../services/mailer.js";
+import { precomputeLinkIds, renderCampaignEmail } from "../services/mailer.js";
 import { getConnectionChain, sendWithChain } from "../services/connections.js";
 import { reserveCampaignSendSlots } from "../services/rateLimiter.js";
 import { QUEUES } from "./boss.js";
@@ -110,6 +110,10 @@ export function registerCampaignDispatchWorker(
     // though this tick runs every minute (most ticks reserve 0 slots and
     // claim nothing). The connection's own rate limit, enforced per-send
     // inside sendWithChain, is the authoritative, globally-shared one.
+    // Resolved once for the whole batch rather than per recipient -- every
+    // subscriber's copy links to the same places.
+    const linkIds = await precomputeLinkIds(db, campaign, template ?? null);
+
     const slots = await reserveCampaignSendSlots(db, campaignId, MAX_CLAIM_PER_TICK);
     const batch = slots > 0 ? await claimBatch(db, campaignId, slots) : [];
     if (batch.length === 0) {
@@ -138,11 +142,13 @@ export function registerCampaignDispatchWorker(
         campaign,
         template ?? null,
         subscriber,
+        linkIds,
       );
       const result = await sendWithChain(db, chain, {
         to: subscriber.email,
         subject: rendered.subject,
         html: rendered.html,
+        text: rendered.text,
         fromOverride: campaign.from_email,
         fromNameOverride: campaign.from_name,
         replyTo: campaign.reply_to,

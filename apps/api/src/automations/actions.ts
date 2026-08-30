@@ -4,7 +4,8 @@ import { addToList, removeFromList } from "../services/subscribers.js";
 import { getExplicitConnectionChain, sendWithChain } from "../services/connections.js";
 import { renderTemplate } from "../lib/template.js";
 import { markdownToHtml } from "../lib/markdown.js";
-import { sign } from "../lib/signing.js";
+import { htmlToText } from "../lib/htmlToText.js";
+import { unsubscribeOneClickUrl, unsubscribePageUrl, unsubscribeRef } from "../lib/trackingUrls.js";
 import type { Automation, Subscriber } from "./types.js";
 import type { Config } from "../config.js";
 
@@ -68,19 +69,11 @@ const removeList = defineAction({
  * contact); the one-click List-Unsubscribe target gets its own endpoint in
  * routes/tracking.ts since there are no campaign lists to leave. */
 function unsubscribeUrls(config: Config, automation: Automation, subscriber: Subscriber) {
-  const sig = sign(config.trackingSecret, [subscriber.uuid, automation.uuid]);
+  const ref = unsubscribeRef("automation", automation.id);
   return {
-    oneClick: `${config.appUrl}/api/v1/unsubscribe/automation/${automation.uuid}/${subscriber.uuid}?sig=${sig}`,
-    page: `${config.appUrl}/unsubscribe/${automation.uuid}/${subscriber.uuid}?sig=${sig}`,
+    oneClick: unsubscribeOneClickUrl(config, ref, subscriber.id),
+    page: unsubscribePageUrl(config, ref, subscriber.id),
   };
-}
-
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }
 
 const sendCustomEmail = defineAction({
@@ -116,14 +109,18 @@ const sendCustomEmail = defineAction({
       UnsubscribeURL: unsub.page,
     };
 
-    let html: string;
+    // A plain-text automation email is sent as a genuine text/plain message
+    // with no HTML part; an HTML one always carries a text alternative, since
+    // HTML-only is a standing SpamAssassin penalty.
+    let html = "";
+    let text: string;
     if (settings.content_type === "plain") {
-      const text = renderTemplate(settings.body, context);
-      html = `<pre style="white-space:pre-wrap;font-family:inherit;margin:0">${escapeHtml(text)}</pre>`;
+      text = renderTemplate(settings.body, context);
     } else {
       const source =
         settings.content_type === "markdown" ? markdownToHtml(settings.body) : settings.body;
       html = renderTemplate(source, context);
+      text = htmlToText(html);
     }
 
     const chain = await getExplicitConnectionChain(
@@ -135,6 +132,7 @@ const sendCustomEmail = defineAction({
       to: subscriber.email,
       subject: renderTemplate(settings.subject, context),
       html,
+      text,
       unsubscribeUrl: unsub.oneClick,
     });
 

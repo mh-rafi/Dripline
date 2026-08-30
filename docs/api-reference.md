@@ -2,7 +2,7 @@
 
 Base path: `/api/v1`. All endpoints except `/meta`, `/auth/login`, `/auth/setup`,
 `/auth/forgot-password`, `/auth/reset-password`, `/automations/hooks/:key`, and
-`/track/*` / `/unsubscribe/*` require an
+`/track/*` / `/unsubscribe/*` / `/u/*` require an
 `Authorization: Bearer <token>` header -- either an admin session JWT (from
 `/auth/login`) or an API user's token (format `dk_xxx_xxx`, created under
 **Settings → Users** in the admin UI, type `api`).
@@ -181,25 +181,25 @@ campaign.
 
 ## Campaigns
 
-| Method | Path                          | Notes                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| ------ | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/campaigns`                  | List                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| GET    | `/campaigns/:id`              | Includes attached `lists`, `connections` (ordered by priority), live `progress`                                                                                                                                                                                                                                                                                                                                              |
-| POST   | `/campaigns`                  | `{ name, subject, preheader?, body, body_source?, content_type?, from_email?, from_name?, reply_to?, template_id?, list_ids, connection_ids, send_at?, rate_limit_count?, rate_limit_duration_seconds? }`. `content_type` one of `richtext \| html \| plain \| markdown \| visual` (default `richtext`). Rate limit fields must be set together or both omitted. `preheader` is the inbox-preview snippet -- see note below. |
-| PATCH  | `/campaigns/:id`              | Partial update (draft/scheduled/paused fields). `template_id`/`rate_limit_*`/`from_name`/`reply_to`/`preheader` accept explicit `null` (or `""` for the latter three) to clear.                                                                                                                                                                                                                                              |
-| PUT    | `/campaigns/:id/lists`        | Replace attached list IDs                                                                                                                                                                                                                                                                                                                                                                                                    |
-| PUT    | `/campaigns/:id/connections`  | Replace the ordered connection chain (array order = priority, first is primary)                                                                                                                                                                                                                                                                                                                                              |
-| DELETE | `/campaigns/:id`              | Only while draft/scheduled                                                                                                                                                                                                                                                                                                                                                                                                   |
-| POST   | `/campaigns/:id/duplicate`    | Creates a new draft with the same content, lists, and connection chain. Never copies `send_at`, `status`, or send history/analytics -- the copy always starts as a fresh, unscheduled draft.                                                                                                                                                                                                                                 |
-| POST   | `/campaigns/:id/start`        | draft/scheduled/paused → running. Materializes `campaign_emails` rows.                                                                                                                                                                                                                                                                                                                                                       |
-| POST   | `/campaigns/:id/pause`        | running → paused                                                                                                                                                                                                                                                                                                                                                                                                             |
-| POST   | `/campaigns/:id/cancel`       | running/paused/draft → cancelled. Terminal for sending; `/reopen` puts it back to draft                                                                                                                                                                                                                                                                                                                                      |
-| POST   | `/campaigns/:id/reopen`       | cancelled → draft. Safe to restart afterwards: recipients already sent to are never re-enqueued                                                                                                                                                                                                                                                                                                                              |
-| POST   | `/campaigns/:id/test`         | `{ email, name?, subject?, preheader?, body?, body_source?, content_type?, from_email?, from_name?, reply_to?, template_id? }` → `{ ok, error }`. Sends one-off, using the campaign's _saved_ connections but any overrides passed in -- doesn't persist them or touch `campaign_emails`/progress. `email` need not be an existing subscriber.                                                                               |
-| POST   | `/campaigns/preview`          | `{ subject?, preheader?, body, body_source?, content_type?, template_id? }` → `{ subject, preheader, html }`. Renders the given content the same way a real send would (template wrapper, merge fields, markdown conversion, tracking links against a synthetic subscriber) -- no saved campaign or sending connection required, so it works for a never-saved draft. Doesn't send anything.                                 |
-| GET    | `/campaigns/:id/progress`     | `{ pending, queued, sent, failed, skipped, total }` -- always live, never cached                                                                                                                                                                                                                                                                                                                                             |
-| GET    | `/campaigns/:id/analytics`    | `{ sent, opens, unique_opens, clicks, unique_clicks, unsubscribes, unique_unsubscribes, engagement, links }` -- see below                                                                                                                                                                                                                                                                                                    |
-| GET    | `/campaigns/:id/unsubscribes` | `?limit=&offset=` → `{ unsubscribes, total }`. One entry per unsubscribe action: `subscriber_email`/`subscriber_name` (null once the contact is deleted), `source`, `list_ids`, and `lists` — the names for those ids that still resolve, so a list deleted since the unsubscribe leaves the id present with no name.                                                                                                        |
+| Method | Path                          | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ------ | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/campaigns`                  | List                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| GET    | `/campaigns/:id`              | Includes attached `lists`, `connections` (ordered by priority), live `progress`                                                                                                                                                                                                                                                                                                                                                                                                    |
+| POST   | `/campaigns`                  | `{ name, subject, preheader?, body, body_source?, alt_body?, content_type?, from_email?, from_name?, reply_to?, template_id?, list_ids, connection_ids, send_at?, rate_limit_count?, rate_limit_duration_seconds? }`. `content_type` one of `richtext \| html \| plain \| markdown \| visual` (default `richtext`). Rate limit fields must be set together or both omitted. `preheader` is the inbox-preview snippet and `alt_body` the plain-text alternative -- see notes below. |
+| PATCH  | `/campaigns/:id`              | Partial update (draft/scheduled/paused fields). `template_id`/`rate_limit_*`/`from_name`/`reply_to`/`preheader`/`alt_body` accept explicit `null` (or `""` for the latter three) to clear.                                                                                                                                                                                                                                                                                         |
+| PUT    | `/campaigns/:id/lists`        | Replace attached list IDs                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| PUT    | `/campaigns/:id/connections`  | Replace the ordered connection chain (array order = priority, first is primary)                                                                                                                                                                                                                                                                                                                                                                                                    |
+| DELETE | `/campaigns/:id`              | Only while draft/scheduled                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| POST   | `/campaigns/:id/duplicate`    | Creates a new draft with the same content, lists, and connection chain. Never copies `send_at`, `status`, or send history/analytics -- the copy always starts as a fresh, unscheduled draft.                                                                                                                                                                                                                                                                                       |
+| POST   | `/campaigns/:id/start`        | draft/scheduled/paused → running. Materializes `campaign_emails` rows.                                                                                                                                                                                                                                                                                                                                                                                                             |
+| POST   | `/campaigns/:id/pause`        | running → paused                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| POST   | `/campaigns/:id/cancel`       | running/paused/draft → cancelled. Terminal for sending; `/reopen` puts it back to draft                                                                                                                                                                                                                                                                                                                                                                                            |
+| POST   | `/campaigns/:id/reopen`       | cancelled → draft. Safe to restart afterwards: recipients already sent to are never re-enqueued                                                                                                                                                                                                                                                                                                                                                                                    |
+| POST   | `/campaigns/:id/test`         | `{ email, name?, subject?, preheader?, body?, body_source?, alt_body?, content_type?, from_email?, from_name?, reply_to?, template_id? }` → `{ ok, error }`. Sends one-off, using the campaign's _saved_ connections but any overrides passed in -- doesn't persist them or touch `campaign_emails`/progress. `email` need not be an existing subscriber.                                                                                                                          |
+| POST   | `/campaigns/preview`          | `{ subject?, preheader?, body, body_source?, content_type?, template_id? }` → `{ subject, preheader, html }`. Renders the given content the same way a real send would (template wrapper, merge fields, markdown conversion, tracking links against a synthetic subscriber) -- no saved campaign or sending connection required, so it works for a never-saved draft. Doesn't send anything.                                                                                       |
+| GET    | `/campaigns/:id/progress`     | `{ pending, queued, sent, failed, skipped, total }` -- always live, never cached                                                                                                                                                                                                                                                                                                                                                                                                   |
+| GET    | `/campaigns/:id/analytics`    | `{ sent, opens, unique_opens, clicks, unique_clicks, unsubscribes, unique_unsubscribes, engagement, links }` -- see below                                                                                                                                                                                                                                                                                                                                                          |
+| GET    | `/campaigns/:id/unsubscribes` | `?limit=&offset=` → `{ unsubscribes, total }`. One entry per unsubscribe action: `subscriber_email`/`subscriber_name` (null once the contact is deleted), `source`, `list_ids`, and `lists` — the names for those ids that still resolve, so a list deleted since the unsubscribe leaves the id present with no name.                                                                                                                                                              |
 
 **`/campaigns/:id/analytics`** reports engagement on the _unique recipient_
 basis every ESP uses, so the numbers are comparable to what Mailchimp or
@@ -227,6 +227,15 @@ dropped for `content_type: "plain"` campaigns (the hidden-div technique it
 uses is HTML-only). Implemented as a `display:none` div injected right after
 `<body>` (or at the very top, for a template-less body) -- see
 `injectPreheader` in `services/mailer.ts`.
+
+**`alt_body`** is the `text/plain` half of the message. Every campaign is sent
+as `multipart/alternative` -- HTML with no text part is a standing SpamAssassin
+penalty -- so this is an override, not a toggle: leave it null (the default) and
+the text part is derived from the rendered HTML at send time by
+`lib/htmlToText.ts`. Supports the same merge fields as the body. Ignored for
+`content_type: "plain"` campaigns, which are already text and go out as a single
+`text/plain` part with no HTML at all. See
+[plan/deliverability.md](plan/deliverability.md).
 
 ## Automations
 
@@ -334,8 +343,38 @@ unreachable endpoint) -- S3 answers HeadBucket with a bare status and no body.
 
 ## Tracking (public, unauthenticated, HMAC-signed)
 
-These URLs are generated automatically inside sent campaign emails -- you
-should not need to construct them by hand.
+These URLs are generated automatically inside sent emails -- you should not need
+to construct them by hand.
+
+Ids are base62 (`lib/shortId.ts`) and `:sig` is 16 hex characters of HMAC-SHA256
+over the rest of the path. The paths are this terse on purpose: SpamAssassin
+penalizes links much past 120 characters, and the older shape below ran to about 260. See [plan/deliverability.md](plan/deliverability.md).
+
+| Method   | Path                                    | Note                                                                                                                                                              |
+| -------- | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET      | `/l/:campaign/:subscriber/:link/:sig`   | Click. Not under `/api/v1` -- top-level, for the length. Resolves `:link` against `links` and redirects. A bad signature still redirects, it just isn't recorded. |
+| GET      | `/o/:campaign/:subscriber/:sig`         | Open pixel. Also top-level.                                                                                                                                       |
+| GET/POST | `/api/v1/u/:ref/:subscriber/:sig`       | One-click (RFC 8058) unsubscribe target.                                                                                                                          |
+| GET      | `/api/v1/u/:ref/:subscriber/:sig/lists` | Lists the preference page offers.                                                                                                                                 |
+| POST     | `/api/v1/u/:ref/:subscriber/:sig/lists` | `{ list_ids }` -- leave the selected lists.                                                                                                                       |
+| POST     | `/api/v1/u/:ref/:subscriber/:sig/all`   | Leave everything.                                                                                                                                                 |
+
+`:ref` carries which kind of send the unsubscribe came from: `c` + campaign id,
+or `a` + automation id. Campaign and automation emails share one preference
+page, and this is what tells them apart.
+
+One-click on a campaign leaves the lists that campaign was sent through. An
+automation isn't list-scoped that way, so one-click there leaves every list; the
+visible link in the body still goes to the per-list preference page.
+
+The human-facing preference page is a client-side route at
+`/u/:ref/:subscriber/:sig` (and the older `/unsubscribe/:campaignUuid/:subscriberUuid`),
+not an API endpoint.
+
+### Older uuid-based tracking URLs
+
+Still served, and permanently: mail carrying them can sit in an inbox
+indefinitely. Nothing generates them any more.
 
 | Method   | Path                                                           |
 | -------- | -------------------------------------------------------------- |
@@ -344,16 +383,12 @@ should not need to construct them by hand.
 | GET/POST | `/unsubscribe/:campaignUuid/:subscriberUuid?sig=`              |
 | GET/POST | `/unsubscribe/automation/:automationUuid/:subscriberUuid?sig=` |
 
-The automation variant is the one-click (List-Unsubscribe) target for emails sent by an
-automation. An automation isn't list-scoped the way a campaign is, so one-click there
-unsubscribes the contact from every list; the visible link in the body still goes to the
-per-list preference page.
-
-Note that the preference page's own routes (`/unsubscribe/:uuid/:subscriberUuid/lists`
-and `/all`) take **either** a campaign or an automation uuid in that first slot --
-automation emails reuse the same page, signing against the automation's uuid. Anything
-resolving that uuid has to check both tables; `resolveUnsubscribeOrigin` in
-`services/unsubscribes.ts` is the one place that does.
+The preference page's own routes on this older shape
+(`/unsubscribe/:uuid/:subscriberUuid/lists` and `/all`) take **either** a
+campaign or an automation uuid in that first slot, so anything resolving that
+uuid has to check both tables -- `resolveUnsubscribeOrigin` in
+`services/unsubscribes.ts` is the one place that does. The `:ref` prefix on the
+short form exists to make that lookup unnecessary.
 
 ### Unsubscribe recording
 

@@ -20,6 +20,7 @@ import {
   BlockLayout,
   Button,
   Input,
+  Textarea,
   Select,
   SelectTrigger,
   SelectValue,
@@ -53,6 +54,7 @@ export default function CampaignDetail() {
   const [name, setName] = useState("");
   const [subject, setSubject] = useState("");
   const [preheader, setPreheader] = useState("");
+  const [altBody, setAltBody] = useState("");
   const [contentType, setContentType] = useState<ContentType>("richtext");
   const [content, setContent] = useState<ContentValue>({ body: "", body_source: null });
   const [fromEmail, setFromEmail] = useState("");
@@ -116,6 +118,7 @@ export default function CampaignDetail() {
       setName(c.name);
       setSubject(c.subject);
       setPreheader(c.preheader ?? "");
+      setAltBody(c.alt_body ?? "");
       setContentType(c.content_type);
       setContent({ body: c.body, body_source: c.body_source });
       setFromEmail(c.from_email ?? "");
@@ -196,6 +199,7 @@ export default function CampaignDetail() {
         preheader: preheader || null,
         body: content.body,
         body_source: content.body_source,
+        alt_body: altBody || null,
         content_type: contentType,
         from_email: fromEmail || undefined,
         from_name: fromName || null,
@@ -234,6 +238,7 @@ export default function CampaignDetail() {
           preheader: preheader || null,
           body: content.body,
           body_source: content.body_source,
+          alt_body: altBody || null,
           content_type: contentType,
           from_email: fromEmail || null,
           from_name: fromName || null,
@@ -491,6 +496,24 @@ export default function CampaignDetail() {
                   {previewError && <span className="text-destructive text-sm">{previewError}</span>}
                 </div>
               </div>
+
+              {contentType !== "plain" && (
+                <div className="space-y-2">
+                  <FormLabel>Plain-text version (optional)</FormLabel>
+                  <Textarea
+                    rows={6}
+                    disabled={!canEdit}
+                    placeholder="Leave empty to generate it automatically from the HTML"
+                    value={altBody}
+                    onChange={(e) => setAltBody(e.target.value)}
+                  />
+                  <p className="text-muted-foreground text-xs">
+                    Every email is sent with both an HTML and a plain-text part &mdash; HTML-only
+                    mail scores worse with spam filters. This one is written for you from the HTML
+                    unless you fill it in here. Merge fields work the same way.
+                  </p>
+                </div>
+              )}
 
               {canEdit && (
                 <div className="space-y-2">

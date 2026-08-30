@@ -3,6 +3,8 @@ import { z } from "zod";
 import type { DB } from "../db/kysely.js";
 import type { Config } from "../config.js";
 import { verify } from "../lib/signing.js";
+import { decodeId } from "../lib/shortId.js";
+import { parseUnsubscribeRef, verifyTrackingSig } from "../lib/trackingUrls.js";
 import { TRANSPARENT_GIF } from "../lib/pixel.js";
 import { recordEvent } from "../services/automations.js";
 import {
@@ -28,11 +30,219 @@ async function resolveIds(db: DB, campaignUuid: string, subscriberUuid: string) 
   return { campaignId: campaign?.id ?? null, subscriberId: subscriber?.id ?? null };
 }
 
+const ShortClickParams = z.object({
+  c: z.string().min(1).max(9),
+  s: z.string().min(1).max(9),
+  k: z.string().min(1).max(9),
+  sig: z.string().length(16),
+});
+
+const ShortOpenParams = ShortClickParams.omit({ k: true });
+
+const ShortUnsubParams = z.object({
+  ref: z.string().min(2).max(10),
+  s: z.string().min(1).max(9),
+  sig: z.string().length(16),
+});
+
+type ShortUnsubLink = { kind: "campaign" | "automation"; id: number; subscriberId: number };
+
+/** Resolves the three segments of a short unsubscribe URL and verifies its
+ * signature. Null means it isn't a link this install issued. */
+function parseShortUnsub(config: Config, params: unknown): ShortUnsubLink | null {
+  const { ref, s, sig } = ShortUnsubParams.parse(params);
+  if (!verifyTrackingSig(config, ["u", ref, s], sig)) return null;
+  const parsed = parseUnsubscribeRef(ref);
+  const subscriberId = decodeId(s);
+  if (!parsed || subscriberId === null || subscriberId <= 0) return null;
+  return { ...parsed, subscriberId };
+}
+
+function originOf(link: ShortUnsubLink) {
+  return link.kind === "campaign"
+    ? { campaignId: link.id, automationId: null }
+    : { campaignId: null, automationId: link.id };
+}
+
+/** The lists an unsubscribe page offers: public ones the contact hasn't
+ * already left. */
+function publicListsFor(db: DB, subscriberId: number) {
+  return db
+    .selectFrom("subscriber_lists")
+    .innerJoin("lists", "lists.id", "subscriber_lists.list_id")
+    .select(["lists.id", "lists.name"])
+    .where("subscriber_lists.subscriber_id", "=", subscriberId)
+    .where("lists.type", "=", "public")
+    .where("subscriber_lists.status", "!=", "unsubscribed")
+    .execute();
+}
+
+/**
+ * Best-effort click recording. The ids come straight off the URL rather than
+ * from a lookup, so a campaign or subscriber deleted between the send and the
+ * click would fail the insert's foreign key -- and a reader owed a redirect
+ * should never be handed a 500 because the analytics write didn't land.
+ */
+async function recordClick(
+  db: DB,
+  click: { linkId: number; campaignId: number; subscriberId: number; url: string },
+): Promise<void> {
+  const { linkId, campaignId, subscriberId, url } = click;
+  try {
+    if (campaignId > 0) {
+      await db
+        .insertInto("link_clicks")
+        .values({
+          link_id: linkId,
+          campaign_id: campaignId,
+          subscriber_id: subscriberId > 0 ? subscriberId : null,
+        })
+        .execute();
+    }
+    if (subscriberId > 0) {
+      await recordEvent(db, {
+        source: "link_clicked",
+        eventKey: url,
+        subscriberId,
+        payload: { url, campaignId },
+      });
+    }
+  } catch (err) {
+    console.error(`click tracking failed for link ${linkId}: ${String(err)}`);
+  }
+}
+
 export default async function trackingRoutes(
   app: FastifyInstance,
   opts: { db: DB; config: Config },
 ) {
   const { db, config } = opts;
+
+  // ---- short tracking URLs ---------------------------------------------------
+  // What newly sent mail carries. The uuid-based /api/v1/track/* and
+  // /unsubscribe/* routes below are the older shape and have to keep working
+  // for as long as mail carrying them can still sit in someone's inbox.
+  // See lib/trackingUrls.ts for why they got shorter.
+
+  app.get("/l/:c/:s/:k/:sig", async (req, reply) => {
+    const { c, s, k, sig } = ShortClickParams.parse(req.params);
+    const linkId = decodeId(k);
+    if (linkId === null) return reply.code(404).send({ error: "not found" });
+
+    const link = await db
+      .selectFrom("links")
+      .select("url")
+      .where("id", "=", linkId)
+      .executeTakeFirst();
+    if (!link) return reply.code(404).send({ error: "not found" });
+
+    // A bad signature still redirects, matching the older route: a mail client
+    // that rewrote the URL shouldn't leave the reader at a dead end. It just
+    // doesn't get counted.
+    if (verifyTrackingSig(config, ["l", c, s, k], sig)) {
+      await recordClick(db, {
+        linkId,
+        campaignId: decodeId(c) ?? 0,
+        subscriberId: decodeId(s) ?? 0,
+        url: link.url,
+      });
+    }
+    return reply.redirect(link.url);
+  });
+
+  app.get("/o/:c/:s/:sig", async (req, reply) => {
+    const { c, s, sig } = ShortOpenParams.parse(req.params);
+
+    reply.header("content-type", "image/gif");
+    if (!verifyTrackingSig(config, ["o", c, s], sig)) {
+      return reply.send(TRANSPARENT_GIF);
+    }
+
+    // Id 0 is the synthetic campaign/subscriber a preview renders against --
+    // never a real row, so there is nothing to record.
+    const campaignId = decodeId(c) ?? 0;
+    const subscriberId = decodeId(s) ?? 0;
+    if (campaignId > 0) {
+      try {
+        await db
+          .insertInto("campaign_views")
+          .values({
+            campaign_id: campaignId,
+            subscriber_id: subscriberId > 0 ? subscriberId : null,
+          })
+          .execute();
+      } catch (err) {
+        console.error(`open tracking failed for campaign ${campaignId}: ${String(err)}`);
+      }
+    }
+    return reply.send(TRANSPARENT_GIF);
+  });
+
+  /** One-click (RFC 8058) target for the List-Unsubscribe header. A campaign
+   * unsubscribe leaves the lists it was sent through; an automation isn't
+   * list-scoped that way, so the honest equivalent there is leaving
+   * everything. */
+  app.all("/api/v1/u/:ref/:s/:sig", async (req, reply) => {
+    const link = parseShortUnsub(config, req.params);
+    if (!link) return reply.code(403).send({ error: "invalid unsubscribe link" });
+
+    const listIds =
+      link.kind === "campaign"
+        ? await unsubscribeFromCampaignLists(db, link.subscriberId, link.id)
+        : await unsubscribeFromAllLists(db, link.subscriberId);
+    await recordUnsubscribe(db, {
+      subscriberId: link.subscriberId,
+      ...originOf(link),
+      source: "one_click",
+      listIds,
+    });
+    return { ok: true };
+  });
+
+  app.get("/api/v1/u/:ref/:s/:sig/lists", async (req, reply) => {
+    const link = parseShortUnsub(config, req.params);
+    if (!link) return reply.code(403).send({ error: "invalid unsubscribe link" });
+
+    const subscriber = await db
+      .selectFrom("subscribers")
+      .select(["id", "email"])
+      .where("id", "=", link.subscriberId)
+      .executeTakeFirst();
+    if (!subscriber) return reply.code(404).send({ error: "not found" });
+
+    return { email: subscriber.email, lists: await publicListsFor(db, subscriber.id) };
+  });
+
+  app.post("/api/v1/u/:ref/:s/:sig/lists", async (req, reply) => {
+    const link = parseShortUnsub(config, req.params);
+    if (!link) return reply.code(403).send({ error: "invalid unsubscribe link" });
+    const { list_ids } = z.object({ list_ids: z.array(z.number().int()) }).parse(req.body);
+
+    const changed = await unsubscribeFromLists(db, link.subscriberId, list_ids);
+    await recordUnsubscribe(db, {
+      subscriberId: link.subscriberId,
+      ...originOf(link),
+      source: "preferences",
+      listIds: changed,
+    });
+    return { ok: true };
+  });
+
+  app.post("/api/v1/u/:ref/:s/:sig/all", async (req, reply) => {
+    const link = parseShortUnsub(config, req.params);
+    if (!link) return reply.code(403).send({ error: "invalid unsubscribe link" });
+
+    const listIds = await unsubscribeFromAllLists(db, link.subscriberId);
+    await recordUnsubscribe(db, {
+      subscriberId: link.subscriberId,
+      ...originOf(link),
+      source: "all",
+      listIds,
+    });
+    return { ok: true };
+  });
+
+  // ---- legacy uuid-based tracking URLs ---------------------------------------
 
   app.get("/api/v1/track/open/:campaignUuid/:subscriberUuid", async (req, reply) => {
     const { campaignUuid, subscriberUuid } = Params.parse(req.params);
@@ -163,16 +373,7 @@ export default async function trackingRoutes(
       .executeTakeFirst();
     if (!subscriber) return reply.code(404).send({ error: "not found" });
 
-    const lists = await db
-      .selectFrom("subscriber_lists")
-      .innerJoin("lists", "lists.id", "subscriber_lists.list_id")
-      .select(["lists.id", "lists.name"])
-      .where("subscriber_lists.subscriber_id", "=", subscriber.id)
-      .where("lists.type", "=", "public")
-      .where("subscriber_lists.status", "!=", "unsubscribed")
-      .execute();
-
-    return { email: subscriber.email, lists };
+    return { email: subscriber.email, lists: await publicListsFor(db, subscriber.id) };
   });
 
   app.post("/api/v1/unsubscribe/:campaignUuid/:subscriberUuid/lists", async (req, reply) => {
