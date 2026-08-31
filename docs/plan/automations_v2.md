@@ -185,10 +185,31 @@ Decisions made while building it:
 - **`send_custom_email` requires an explicit connection** (and a non-empty
   body). It was optional, which let an automation be published that could never
   send -- the chain resolved empty and every email was dropped at send time.
+- **`send_custom_email`'s template is optional and defaults to none.** It wraps
+  the body in the chosen template's `{{ Body }}` slot exactly as campaigns do
+  (wrap first, render merge fields second, so the template body can use them
+  too), and is skipped for `content_type: "plain"` -- a template body is HTML.
+  Defaulting to no template rather than to the default template is deliberate:
+  the field can be added to an existing install without changing a single byte
+  of what an already-published automation puts on the wire. A `template_id`
+  pointing at a since-deleted template falls back to the bare body rather than
+  failing the send and stranding the contact on the node.
 - **A published automation can still be edited into an incomplete state** --
   graph saves aren't re-validated, deliberately, or you couldn't add a block to
   a live automation and configure it afterwards. The warning icon is what
   surfaces this; the engine logs and skips a node whose config no longer parses.
+- **Test sends go through the action's own renderer, not the campaign one.**
+  `POST /automations/:id/test` exists because `POST /campaigns/:id/test` can't
+  be reused: it loads a campaign row, resolves _that campaign's_ connection
+  chain, and renders a `Campaign.*` merge context with campaign-scoped
+  unsubscribe links. An email step has an explicit chain of its own and an
+  `Automation.*` context. So the render half of `send_custom_email` was pulled
+  out into `automations/email.ts` (`renderAutomationEmail`, plus the config
+  schema both the action and the route validate against) -- the action and the
+  test endpoint call the same function, which is what makes a test faithful to
+  what the live automation sends. The web side genuinely is reused:
+  `EmailHistoryInput` and `useEmailHistory` are shared with the campaign page,
+  so both features draw on one address history.
 - **The visual (GrapesJS) editing mode is left out of automation emails** -- it needs far
   more room than a 520px sidebar. `ContentTypeEditor` grew an `allowedTypes` prop for this.
 

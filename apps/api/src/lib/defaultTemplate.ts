@@ -38,6 +38,33 @@ export const DEFAULT_TEMPLATE_BODY = `<!DOCTYPE html>
     color: #555555;
   }
   .email-wrapper img { max-width: 100%; height: auto; }
+  /* Button classes to hand-write into a campaign body:
+     <a class="button-solid" href="...">Label</a>. Scoped under .email-wrapper
+     so they outrank the plain-link rule above on specificity rather than on
+     source order. */
+  .email-wrapper .button-outline {
+    display: inline-block;
+    margin-bottom: 4px;
+    margin-right: 8px;
+    padding: 10px 18px;
+    border: 1px solid #000000;
+    border-radius: 8px;
+    color: #000000;
+    background-color: #ffffff;
+    text-decoration: none;
+    font-weight: 600;
+  }
+  .email-wrapper .button-solid {
+    display: inline-block;
+    margin-bottom: 4px;
+    padding: 10px 18px;
+    border: 1px solid #000000;
+    border-radius: 8px;
+    color: #ffffff;
+    background-color: #000000;
+    text-decoration: none;
+    font-weight: 600;
+  }
   .email-footer {
     margin-top: 2.5em;
     padding-top: 1.5em;

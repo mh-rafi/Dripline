@@ -1,8 +1,13 @@
+import { useState } from "react";
 import { Clock, ListMinus, ListPlus, MailPlus } from "lucide-react";
+import { api } from "../lib/api.js";
+import { useEmailHistory } from "../hooks/useEmailHistory.js";
+import EmailHistoryInput from "../components/EmailHistoryInput.js";
 import ContentTypeEditor, {
   type ContentType,
 } from "../components/content-editor/ContentTypeEditor.js";
 import { ConnectionChainPicker, ListPicker } from "./fields.js";
+import { useAutomationData } from "./context.js";
 import {
   listIdsOf,
   listNames,
@@ -14,6 +19,7 @@ import {
   type SummaryContext,
 } from "./registry.js";
 import {
+  Button,
   FormLabel,
   Input,
   Select,
@@ -122,8 +128,10 @@ function numbersOf(config: NodeConfig, key: string): number[] {
   return value.filter((v): v is number => typeof v === "number");
 }
 
-function SendCustomEmailSettings({ config, onChange }: SettingsProps) {
+function SendCustomEmailSettings({ config, onChange, automation }: SettingsProps) {
+  const { templates } = useAutomationData();
   const connectionId = typeof config.connection_id === "number" ? config.connection_id : undefined;
+  const templateId = typeof config.template_id === "number" ? String(config.template_id) : "none";
   const bodySource = config.body_source;
 
   return (
@@ -159,6 +167,31 @@ function SendCustomEmailSettings({ config, onChange }: SettingsProps) {
         />
       </div>
 
+      <div className="space-y-2">
+        <FormLabel>Template (optional)</FormLabel>
+        <Select
+          value={templateId}
+          onValueChange={(v) =>
+            onChange({ ...config, template_id: v === "none" ? null : Number(v) })
+          }
+        >
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">None</SelectItem>
+            {templates.map((t) => (
+              <SelectItem key={t.id} value={String(t.id)}>
+                {t.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-muted-foreground text-xs">
+          Wraps the body in the template's {"{{ Body }}"} slot. Ignored for plain-text emails.
+        </p>
+      </div>
+
       <ConnectionChainPicker
         connectionId={connectionId}
         fallbackIds={numbersOf(config, "fallback_connection_ids")}
@@ -170,6 +203,65 @@ function SendCustomEmailSettings({ config, onChange }: SettingsProps) {
           })
         }
       />
+
+      <TestSendRow automationId={automation.id} config={config} />
+    </div>
+  );
+}
+
+/** Test-sends this step's current, unsaved config -- the automation analogue of
+ * the campaign page's "Send test", down to sharing its address history. */
+function TestSendRow({ automationId, config }: { automationId: number; config: NodeConfig }) {
+  const { emails, addEmail, removeEmail } = useEmailHistory();
+  const [email, setEmail] = useState(() => emails[0] ?? "");
+  const [sending, setSending] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; error: string | null } | null>(null);
+
+  async function send() {
+    if (!email) return;
+    addEmail(email);
+    setSending(true);
+    setResult(null);
+    try {
+      setResult(
+        await api.post<{ ok: boolean; error: string | null }>(`/automations/${automationId}/test`, {
+          ...config,
+          email,
+        }),
+      );
+    } catch (err) {
+      setResult({ ok: false, error: err instanceof Error ? err.message : "test send failed" });
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <FormLabel>Send test email</FormLabel>
+      <div className="flex items-center gap-2">
+        <EmailHistoryInput
+          type="email"
+          placeholder="you@example.com"
+          value={email}
+          onChange={setEmail}
+          emails={emails}
+          onRemoveEmail={removeEmail}
+          className="min-w-0 flex-1"
+        />
+        <Button type="button" variant="outline" disabled={sending || !email} onClick={send}>
+          {sending ? "Sending…" : "Send test"}
+        </Button>
+      </div>
+      {result && (
+        <p className={result.ok ? "text-success text-sm" : "text-destructive text-sm"}>
+          {result.ok ? "Test sent" : `Failed: ${result.error}`}
+        </p>
+      )}
+      <p className="text-muted-foreground text-xs">
+        Sends this step as configured right now -- it doesn't save the automation, enrol anyone, or
+        advance a contact.
+      </p>
     </div>
   );
 }
@@ -216,7 +308,13 @@ export const ACTIONS: NodeUi[] = [
     description: "Write a one-off email and send it to the contact.",
     icon: MailPlus,
     group: "Email",
-    defaultConfig: { subject: "", body: "", content_type: "richtext", fallback_connection_ids: [] },
+    defaultConfig: {
+      subject: "",
+      body: "",
+      content_type: "richtext",
+      template_id: null,
+      fallback_connection_ids: [],
+    },
     summary: (config) => stringOf(config, "subject") || "No subject yet",
     validate: validateSendCustomEmail,
     Settings: SendCustomEmailSettings,

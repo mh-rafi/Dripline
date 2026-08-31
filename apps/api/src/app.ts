@@ -86,7 +86,7 @@ export function buildApp(pool: pg.Pool, db: DB, config: Config): FastifyInstance
   app.register(templateRoutes, { db });
   app.register(connectionRoutes, { db });
   app.register(campaignRoutes, { db, config });
-  app.register(automationRoutes, { db });
+  app.register(automationRoutes, { db, config });
   app.register(bounceRoutes, { db });
   app.register(trackingRoutes, { db, config });
   app.register(mediaRoutes, { db });

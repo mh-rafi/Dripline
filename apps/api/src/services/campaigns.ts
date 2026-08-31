@@ -403,10 +403,16 @@ export async function sendTestEmail(
   return { ok: result.ok, error: result.error };
 }
 
-// Cast: Kysely's `Generated<Timestamp>` double-wraps ColumnType (Timestamp is
-// itself a ColumnType), which its own `Selectable<>` utility only unwraps one
-// level -- harmless here since renderCampaignEmail never reads these fields.
-function syntheticSubscriber(email: string, name: string): Selectable<SubscribersTable> {
+/**
+ * A non-persisted stand-in contact, so a test send or a preview works for any
+ * address rather than only for existing subscribers. Also used by the
+ * automation test-send route.
+ *
+ * Cast: Kysely's `Generated<Timestamp>` double-wraps ColumnType (Timestamp is
+ * itself a ColumnType), which its own `Selectable<>` utility only unwraps one
+ * level -- harmless here since the render paths never read these fields.
+ */
+export function syntheticSubscriber(email: string, name: string): Selectable<SubscribersTable> {
   return {
     id: 0,
     uuid: randomUUID(),

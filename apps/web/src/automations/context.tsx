@@ -1,24 +1,31 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { api } from "../lib/api.js";
-import type { Connection, List } from "../lib/types.js";
+import type { Connection, List, Template } from "../lib/types.js";
 
 interface AutomationData {
   lists: List[];
   connections: Connection[];
+  templates: Template[];
 }
 
-const AutomationDataContext = createContext<AutomationData>({ lists: [], connections: [] });
+const EMPTY: AutomationData = { lists: [], connections: [], templates: [] };
 
-/** Lists and connections are needed by most node settings panels (and by the
- * one-line summaries on the canvas blocks), so they're fetched once per
- * builder session instead of per panel. */
+const AutomationDataContext = createContext<AutomationData>(EMPTY);
+
+/** Lists, connections and templates are needed by most node settings panels
+ * (and by the one-line summaries on the canvas blocks), so they're fetched
+ * once per builder session instead of per panel. */
 export function AutomationDataProvider({ children }: { children: ReactNode }) {
-  const [data, setData] = useState<AutomationData>({ lists: [], connections: [] });
+  const [data, setData] = useState<AutomationData>(EMPTY);
 
   useEffect(() => {
-    Promise.all([api.get<List[]>("/lists"), api.get<Connection[]>("/connections")])
-      .then(([lists, connections]) => setData({ lists, connections }))
-      .catch(() => setData({ lists: [], connections: [] }));
+    Promise.all([
+      api.get<List[]>("/lists"),
+      api.get<Connection[]>("/connections"),
+      api.get<Template[]>("/templates"),
+    ])
+      .then(([lists, connections, templates]) => setData({ lists, connections, templates }))
+      .catch(() => setData(EMPTY));
   }, []);
 
   return <AutomationDataContext.Provider value={data}>{children}</AutomationDataContext.Provider>;

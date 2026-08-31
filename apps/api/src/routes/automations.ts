@@ -1,14 +1,25 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { DB } from "../db/kysely.js";
+import type { Config } from "../config.js";
 import { BadRequestError, NotFoundError } from "../lib/errors.js";
 import { AutomationGraph, orderedNodes } from "../lib/automationGraph.js";
 import { getTrigger, TRIGGERS } from "../automations/triggers.js";
 import { ACTIONS, getAction } from "../automations/actions.js";
+import { SendCustomEmailConfig, renderAutomationEmail } from "../automations/email.js";
+import { getExplicitConnectionChain, sendWithChain } from "../services/connections.js";
+import { syntheticSubscriber } from "../services/campaigns.js";
 import { enroll, fireEvent, getAutomationOrThrow, recordEvent } from "../services/automations.js";
 import { getAutomationUnsubscribeCounts } from "../services/unsubscribes.js";
 
 const IdParam = z.object({ id: z.coerce.number() });
+
+/** The node's own config, plus who to send to. Kept loose (passthrough of
+ * the config fields) so it can be validated by the action's real schema
+ * below rather than being duplicated here. */
+const TestEmail = z
+  .object({ email: z.string().email(), name: z.string().optional() })
+  .passthrough();
 
 const CreateAutomation = z.object({
   name: z.string().min(1),
@@ -83,8 +94,11 @@ function safeParseNode(
   }
 }
 
-export default async function automationRoutes(app: FastifyInstance, opts: { db: DB }) {
-  const { db } = opts;
+export default async function automationRoutes(
+  app: FastifyInstance,
+  opts: { db: DB; config: Config },
+) {
+  const { db, config } = opts;
 
   // --- Public ingress (own scope: no requireAuth) --------------------------
   // The per-automation key in the URL *is* the credential -- it is generated
@@ -313,6 +327,66 @@ export default async function automationRoutes(app: FastifyInstance, opts: { db:
       async (req) => {
         const { id } = IdParam.parse(req.params);
         return getAutomationUnsubscribeCounts(db, id);
+      },
+    );
+
+    /** Test-sends one `send_custom_email` node. Mirrors
+     * `POST /campaigns/:id/test`: the config comes from the request, not the
+     * saved graph, so in-progress edits can be tried before saving, and no
+     * enrollment is created or advanced. Rendering goes through the same
+     * renderAutomationEmail the live action uses, so what lands in the inbox
+     * is what the automation will actually send. */
+    adminApp.post(
+      "/api/v1/automations/:id/test",
+      { preHandler: adminApp.requirePermission("automations:manage") },
+      async (req) => {
+        const { id } = IdParam.parse(req.params);
+        const { email, name, ...rest } = TestEmail.parse(req.body);
+        const automation = await getAutomationOrThrow(db, id);
+
+        const parsed = SendCustomEmailConfig.safeParse(rest);
+        if (!parsed.success) {
+          // A half-configured node is the normal case here (you test while
+          // writing), so this is a plain message rather than a 400 the UI
+          // would have to special-case.
+          const fields = parsed.error.issues.map((i) => i.path.join(".")).join(", ");
+          return { ok: false, error: `incomplete email step: ${fields}` };
+        }
+
+        const chain = await getExplicitConnectionChain(
+          db,
+          parsed.data.connection_id,
+          parsed.data.fallback_connection_ids,
+        );
+        if (chain.length === 0) {
+          return { ok: false, error: "no sending connection selected for this step" };
+        }
+
+        // Use the real contact if the address happens to be one, so merge
+        // fields preview with real data; otherwise a synthetic stand-in.
+        const existing = await db
+          .selectFrom("subscribers")
+          .selectAll()
+          .where("email", "=", email)
+          .executeTakeFirst();
+        const subscriber = existing ?? syntheticSubscriber(email, name ?? "Test Subscriber");
+
+        const rendered = await renderAutomationEmail(
+          db,
+          config,
+          automation,
+          subscriber,
+          parsed.data,
+        );
+        const result = await sendWithChain(db, chain, {
+          to: email,
+          subject: rendered.subject,
+          html: rendered.html,
+          text: rendered.text,
+          unsubscribeUrl: rendered.unsubscribeUrl,
+        });
+
+        return { ok: result.ok, error: result.error };
       },
     );
   });

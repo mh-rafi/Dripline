@@ -16,11 +16,13 @@ const PreviewTemplate = z.object({ body: z.string() });
 
 // Stands in for `{{ Body }}` when previewing a template on its own (no real
 // campaign content exists yet) -- exercises the same element types the
-// default template's CSS targets (headings, links, hr, blockquote) so the
-// preview is actually representative of a real campaign's styling.
+// default template's CSS targets (headings, links, buttons, hr, blockquote) so
+// the preview is actually representative of a real campaign's styling.
 const SAMPLE_BODY = `<h2>Sample section heading</h2>
 <p>Hi {{ Subscriber.Name }}, this is example paragraph content showing how your template styles
 body text and <a href="https://example.com">links</a>.</p>
+<p><a class="button-solid" href="https://example.com">Primary button</a>
+<a class="button-outline" href="https://example.com">Secondary button</a></p>
 <hr>
 <blockquote>A sample quoted callout, to preview blockquote styling.</blockquote>`;
 
