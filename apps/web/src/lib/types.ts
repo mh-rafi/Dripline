@@ -168,6 +168,9 @@ export interface CampaignAnalytics {
   unique_clicks: number;
   unsubscribes: number;
   unique_unsubscribes: number;
+  /** Only the departures that named a reason, most common first. Everything
+   * left over in `unsubscribes` is someone who skipped the question. */
+  reasons: { reason: string; count: number }[];
   engagement: {
     clicked: number;
     opened_not_clicked: number;
@@ -186,6 +189,10 @@ export interface CampaignUnsubscribe {
   subscriber_email: string | null;
   subscriber_name: string | null;
   source: UnsubscribeSource;
+  /** Optional feedback given on the preference page after leaving. Null for
+   * one-click departures and for anyone who skipped the question. */
+  reason: string | null;
+  reason_comment: string | null;
   list_ids: number[];
   lists: { id: number; name: string }[];
   created_at: string;

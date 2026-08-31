@@ -271,6 +271,13 @@ export interface CampaignUnsubscribesTable {
   automation_id: number | null;
   source: UnsubscribeSource;
   list_ids: Generated<number[]>;
+  /** Optional feedback, asked for on the preference page *after* the
+   * unsubscribe is already recorded. Null for one-click departures (nobody to
+   * ask) and for anyone who skipped. Values come from
+   * lib/unsubscribeReasons.ts; a row can name one since removed from that
+   * registry. */
+  reason: string | null;
+  reason_comment: string | null;
   created_at: Generated<Timestamp>;
 }
 

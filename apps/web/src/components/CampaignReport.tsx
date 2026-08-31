@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
 import { Info, Mail, MailOpen, MousePointerClick, Send, UserMinus } from "lucide-react";
 import type { CampaignAnalytics } from "../lib/types.js";
+import { unsubscribeReasonLabel } from "../lib/unsubscribeReasons.js";
 import {
   BlockLayout,
   Table,
@@ -182,6 +183,10 @@ export default function CampaignReport({ analytics }: { analytics: CampaignAnaly
     },
   ];
 
+  // Reason shares are of the people who answered, not of everyone who left:
+  // the question is optional, so the two denominators are different questions.
+  const answered = analytics.reasons.reduce((sum, r) => sum + r.count, 0);
+
   return (
     <TooltipProvider delayDuration={200}>
       <div className="grid gap-4 lg:grid-cols-3">
@@ -294,6 +299,33 @@ export default function CampaignReport({ analytics }: { analytics: CampaignAnaly
             </TableWrapper>
           )}
         </BlockLayout>
+
+        {/* Only rendered once somebody has actually answered -- an empty
+            "why people left" panel on every campaign is noise. */}
+        {analytics.reasons.length > 0 && (
+          <BlockLayout padding="sm">
+            <h4 className="mt-0 mb-3 text-base font-semibold">Why people unsubscribed</h4>
+            <ul className="space-y-1.5 text-sm">
+              {analytics.reasons.map((r) => (
+                <li key={r.reason} className="flex items-center gap-2">
+                  <span className="text-muted-foreground truncate">
+                    {unsubscribeReasonLabel(r.reason)}
+                  </span>
+                  <span className="ml-auto shrink-0 font-medium tabular-nums">
+                    {nf.format(r.count)}
+                  </span>
+                  <span className="text-muted-foreground w-16 shrink-0 text-right tabular-nums">
+                    {rate(r.count, answered)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p className="text-muted-foreground mt-3 text-xs">
+              {nf.format(answered)} of {nf.format(analytics.unsubscribes)} gave a reason. Shares are
+              of those who answered, not of everyone who left.
+            </p>
+          </BlockLayout>
+        )}
       </div>
     </TooltipProvider>
   );

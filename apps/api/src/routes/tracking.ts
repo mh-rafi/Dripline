@@ -12,7 +12,12 @@ import {
   unsubscribeFromCampaignLists,
   unsubscribeFromLists,
 } from "../services/subscribers.js";
-import { recordUnsubscribe, resolveUnsubscribeOrigin } from "../services/unsubscribes.js";
+import {
+  recordUnsubscribe,
+  resolveUnsubscribeOrigin,
+  setUnsubscribeReason,
+} from "../services/unsubscribes.js";
+import { ReasonBody } from "../lib/unsubscribeReasons.js";
 
 const Params = z.object({ campaignUuid: z.string().uuid(), subscriberUuid: z.string().uuid() });
 
@@ -219,13 +224,16 @@ export default async function trackingRoutes(
     const { list_ids } = z.object({ list_ids: z.array(z.number().int()) }).parse(req.body);
 
     const changed = await unsubscribeFromLists(db, link.subscriberId, list_ids);
-    await recordUnsubscribe(db, {
+    // The id goes back so the page can offer the optional "why did you leave"
+    // question afterwards -- null when nothing changed (a repeat click), in
+    // which case there is no row to attach anything to.
+    const unsubscribe_id = await recordUnsubscribe(db, {
       subscriberId: link.subscriberId,
       ...originOf(link),
       source: "preferences",
       listIds: changed,
     });
-    return { ok: true };
+    return { ok: true, unsubscribe_id };
   });
 
   app.post("/api/v1/u/:ref/:s/:sig/all", async (req, reply) => {
@@ -233,11 +241,29 @@ export default async function trackingRoutes(
     if (!link) return reply.code(403).send({ error: "invalid unsubscribe link" });
 
     const listIds = await unsubscribeFromAllLists(db, link.subscriberId);
-    await recordUnsubscribe(db, {
+    const unsubscribe_id = await recordUnsubscribe(db, {
       subscriberId: link.subscriberId,
       ...originOf(link),
       source: "all",
       listIds,
+    });
+    return { ok: true, unsubscribe_id };
+  });
+
+  /** Optional feedback on an unsubscribe that has already happened -- the page
+   * asks only after the fact, so this can never gate or delay someone
+   * leaving. Silently a no-op if the row is already answered or isn't this
+   * contact's: there is nothing useful to tell a departing reader either way. */
+  app.post("/api/v1/u/:ref/:s/:sig/reason", async (req, reply) => {
+    const link = parseShortUnsub(config, req.params);
+    if (!link) return reply.code(403).send({ error: "invalid unsubscribe link" });
+    const body = ReasonBody.parse(req.body);
+
+    await setUnsubscribeReason(db, {
+      unsubscribeId: body.unsubscribe_id,
+      subscriberId: link.subscriberId,
+      reason: body.reason,
+      comment: body.comment,
     });
     return { ok: true };
   });
@@ -390,19 +416,19 @@ export default async function trackingRoutes(
       .select("id")
       .where("uuid", "=", subscriberUuid)
       .executeTakeFirst();
-    if (subscriber) {
-      const changed = await unsubscribeFromLists(db, subscriber.id, list_ids);
-      // The uuid here may belong to a campaign or an automation -- both kinds
-      // of email send people to this same page.
-      const origin = await resolveUnsubscribeOrigin(db, campaignUuid);
-      await recordUnsubscribe(db, {
-        subscriberId: subscriber.id,
-        ...origin,
-        source: "preferences",
-        listIds: changed,
-      });
-    }
-    return { ok: true };
+    if (!subscriber) return { ok: true, unsubscribe_id: null };
+
+    const changed = await unsubscribeFromLists(db, subscriber.id, list_ids);
+    // The uuid here may belong to a campaign or an automation -- both kinds
+    // of email send people to this same page.
+    const origin = await resolveUnsubscribeOrigin(db, campaignUuid);
+    const unsubscribe_id = await recordUnsubscribe(db, {
+      subscriberId: subscriber.id,
+      ...origin,
+      source: "preferences",
+      listIds: changed,
+    });
+    return { ok: true, unsubscribe_id };
   });
 
   app.post("/api/v1/unsubscribe/:campaignUuid/:subscriberUuid/all", async (req, reply) => {
@@ -417,14 +443,39 @@ export default async function trackingRoutes(
       .select("id")
       .where("uuid", "=", subscriberUuid)
       .executeTakeFirst();
+    if (!subscriber) return { ok: true, unsubscribe_id: null };
+
+    const listIds = await unsubscribeFromAllLists(db, subscriber.id);
+    const origin = await resolveUnsubscribeOrigin(db, campaignUuid);
+    const unsubscribe_id = await recordUnsubscribe(db, {
+      subscriberId: subscriber.id,
+      ...origin,
+      source: "all",
+      listIds,
+    });
+    return { ok: true, unsubscribe_id };
+  });
+
+  /** The older page's counterpart to /api/v1/u/:ref/:s/:sig/reason. */
+  app.post("/api/v1/unsubscribe/:campaignUuid/:subscriberUuid/reason", async (req, reply) => {
+    const { campaignUuid, subscriberUuid } = Params.parse(req.params);
+    const { sig } = z.object({ sig: z.string() }).parse(req.body);
+    if (!verify(config.trackingSecret, [subscriberUuid, campaignUuid], sig)) {
+      return reply.code(403).send({ error: "invalid unsubscribe link" });
+    }
+    const body = ReasonBody.parse(req.body);
+
+    const subscriber = await db
+      .selectFrom("subscribers")
+      .select("id")
+      .where("uuid", "=", subscriberUuid)
+      .executeTakeFirst();
     if (subscriber) {
-      const listIds = await unsubscribeFromAllLists(db, subscriber.id);
-      const origin = await resolveUnsubscribeOrigin(db, campaignUuid);
-      await recordUnsubscribe(db, {
+      await setUnsubscribeReason(db, {
+        unsubscribeId: body.unsubscribe_id,
         subscriberId: subscriber.id,
-        ...origin,
-        source: "all",
-        listIds,
+        reason: body.reason,
+        comment: body.comment,
       });
     }
     return { ok: true };

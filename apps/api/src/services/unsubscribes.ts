@@ -29,6 +29,9 @@ export async function resolveUnsubscribeOrigin(
  * changed -- an empty array means nothing was left (a repeat click, or a
  * contact already unsubscribed), and nothing is recorded, so the metric counts
  * departures rather than requests.
+ *
+ * Returns the new row's id, which the preference page needs in order to attach
+ * a reason afterwards, or null when nothing was recorded.
  */
 export async function recordUnsubscribe(
   db: DB,
@@ -39,9 +42,9 @@ export async function recordUnsubscribe(
     source: UnsubscribeSource;
     listIds: number[];
   },
-): Promise<void> {
-  if (input.listIds.length === 0) return;
-  await db
+): Promise<string | null> {
+  if (input.listIds.length === 0) return null;
+  const row = await db
     .insertInto("campaign_unsubscribes")
     .values({
       subscriber_id: input.subscriberId,
@@ -50,12 +53,47 @@ export async function recordUnsubscribe(
       source: input.source,
       list_ids: input.listIds,
     })
-    .execute();
+    .returning("id")
+    .executeTakeFirst();
+  return row?.id ?? null;
+}
+
+/**
+ * Attaches optional feedback to an unsubscribe that already happened.
+ *
+ * Scoped to `subscriberId` -- which comes from the signed URL, not the request
+ * body -- so holding one valid unsubscribe link can't write a reason onto
+ * somebody else's row by guessing at the sequential id. `reason IS NULL` makes
+ * it write-once: the page offers the question exactly once, and a replayed
+ * request can't overwrite what was said.
+ */
+export async function setUnsubscribeReason(
+  db: DB,
+  input: {
+    unsubscribeId: string;
+    subscriberId: number;
+    reason: string;
+    comment?: string | null;
+  },
+): Promise<boolean> {
+  const result = await db
+    .updateTable("campaign_unsubscribes")
+    .set({ reason: input.reason, reason_comment: input.comment || null })
+    .where("id", "=", input.unsubscribeId)
+    .where("subscriber_id", "=", input.subscriberId)
+    .where("reason", "is", null)
+    .executeTakeFirst();
+  return Number(result.numUpdatedRows) > 0;
 }
 
 interface UnsubscribeCounts {
   unsubscribes: number;
   unique_unsubscribes: number;
+  /** Only rows where someone actually answered, most common first. The
+   * difference between their sum and `unsubscribes` is how many left without
+   * saying why -- left to the caller rather than returned as a bucket, since
+   * "didn't answer" isn't a reason. */
+  reasons: { reason: string; count: number }[];
 }
 
 async function countBy(
@@ -63,17 +101,29 @@ async function countBy(
   column: "campaign_id" | "automation_id",
   id: number,
 ): Promise<UnsubscribeCounts> {
-  const row = await db
-    .selectFrom("campaign_unsubscribes")
-    .select((eb) => [
-      eb.fn.countAll<string>().as("total"),
-      eb.fn.count<string>("subscriber_id").distinct().as("unique"),
-    ])
-    .where(column, "=", id)
-    .executeTakeFirst();
+  const [row, reasons] = await Promise.all([
+    db
+      .selectFrom("campaign_unsubscribes")
+      .select((eb) => [
+        eb.fn.countAll<string>().as("total"),
+        eb.fn.count<string>("subscriber_id").distinct().as("unique"),
+      ])
+      .where(column, "=", id)
+      .executeTakeFirst(),
+    db
+      .selectFrom("campaign_unsubscribes")
+      .select((eb) => ["reason", eb.fn.countAll<string>().as("count")])
+      .where(column, "=", id)
+      .where("reason", "is not", null)
+      .groupBy("reason")
+      .orderBy("count", "desc")
+      .orderBy("reason", "asc")
+      .execute(),
+  ]);
   return {
     unsubscribes: Number(row?.total ?? 0),
     unique_unsubscribes: Number(row?.unique ?? 0),
+    reasons: reasons.map((r) => ({ reason: r.reason!, count: Number(r.count) })),
   };
 }
 
@@ -103,6 +153,8 @@ async function listBy(
         "subscribers.email as subscriber_email",
         "subscribers.name as subscriber_name",
         "campaign_unsubscribes.source",
+        "campaign_unsubscribes.reason",
+        "campaign_unsubscribes.reason_comment",
         "campaign_unsubscribes.list_ids",
         "campaign_unsubscribes.created_at",
       ])

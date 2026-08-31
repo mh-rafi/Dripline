@@ -1,11 +1,28 @@
 import { useEffect, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { api } from "../lib/api.js";
-import { Button, Checkbox, CheckboxLabel, Alert } from "../components/ui/index.js";
+import { REASON_COMMENT_MAX, UNSUBSCRIBE_REASONS } from "../lib/unsubscribeReasons.js";
+import {
+  Button,
+  Checkbox,
+  CheckboxLabel,
+  Alert,
+  RadioGroup,
+  RadioGroupItem,
+  RadioGroupLabel,
+  Textarea,
+} from "../components/ui/index.js";
 
 interface PreferenceData {
   email: string;
   lists: { id: number; name: string }[];
+}
+
+interface UnsubscribeResult {
+  ok: boolean;
+  /** Null when the click changed nothing (a repeat visit), in which case there
+   * is no record to attach feedback to and the question is not offered. */
+  unsubscribe_id: string | null;
 }
 
 export default function Unsubscribe() {
@@ -24,6 +41,14 @@ export default function Unsubscribe() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<string | null>(null);
+
+  // Feedback is asked for only after the unsubscribe has already been
+  // recorded, so the question can never gate or delay someone leaving.
+  const [unsubscribeId, setUnsubscribeId] = useState<string | null>(null);
+  const [reason, setReason] = useState<string>("");
+  const [comment, setComment] = useState("");
+  const [feedbackBusy, setFeedbackBusy] = useState(false);
+  const [feedbackDone, setFeedbackDone] = useState(false);
 
   const base = short ? `/u/${ref}/${sub}/${sig}` : `/unsubscribe/${campaignUuid}/${subscriberUuid}`;
   // The short form signs the whole path, so there is no query string to add.
@@ -49,12 +74,13 @@ export default function Unsubscribe() {
     });
   }
 
-  async function unsubscribeSelected() {
+  async function leave(path: string, body: object, message: string) {
     setBusy(true);
     setError(null);
     try {
-      await api.post(`${base}/lists`, { sig, list_ids: [...checked] });
-      setDone("You've been unsubscribed from the selected lists.");
+      const result = await api.post<UnsubscribeResult>(path, { sig, ...body });
+      setUnsubscribeId(result.unsubscribe_id);
+      setDone(message);
     } catch (err) {
       setError(err instanceof Error ? err.message : "failed to update your preferences");
     } finally {
@@ -62,16 +88,22 @@ export default function Unsubscribe() {
     }
   }
 
-  async function unsubscribeAll() {
-    setBusy(true);
-    setError(null);
+  async function sendFeedback() {
+    if (!reason || !unsubscribeId) return;
+    setFeedbackBusy(true);
     try {
-      await api.post(`${base}/all`, { sig });
-      setDone("You've been unsubscribed from all mailing lists.");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "failed to unsubscribe");
+      await api.post(`${base}/reason`, {
+        sig,
+        unsubscribe_id: unsubscribeId,
+        reason,
+        comment: comment || null,
+      });
+    } catch {
+      // Deliberately swallowed: they have already unsubscribed, and a failed
+      // optional survey is not something to hand them an error about.
     } finally {
-      setBusy(false);
+      setFeedbackBusy(false);
+      setFeedbackDone(true);
     }
   }
 
@@ -110,10 +142,25 @@ export default function Unsubscribe() {
                     </Alert>
                   )}
                   <div className="flex flex-col gap-2">
-                    <Button disabled={busy} onClick={unsubscribeSelected}>
+                    <Button
+                      disabled={busy}
+                      onClick={() =>
+                        leave(
+                          `${base}/lists`,
+                          { list_ids: [...checked] },
+                          "You've been unsubscribed from the selected lists.",
+                        )
+                      }
+                    >
                       Unsubscribe from selected
                     </Button>
-                    <Button variant="outline" disabled={busy} onClick={unsubscribeAll}>
+                    <Button
+                      variant="outline"
+                      disabled={busy}
+                      onClick={() =>
+                        leave(`${base}/all`, {}, "You've been unsubscribed from all mailing lists.")
+                      }
+                    >
                       Unsubscribe from everything
                     </Button>
                   </div>
@@ -128,7 +175,13 @@ export default function Unsubscribe() {
                       {error}
                     </Alert>
                   )}
-                  <Button disabled={busy} onClick={unsubscribeAll} className="w-full">
+                  <Button
+                    disabled={busy}
+                    onClick={() =>
+                      leave(`${base}/all`, {}, "You've been unsubscribed from all mailing lists.")
+                    }
+                    className="w-full"
+                  >
                     Unsubscribe
                   </Button>
                 </>
@@ -137,6 +190,51 @@ export default function Unsubscribe() {
           )}
 
           {done && <p className="text-sm">{done}</p>}
+
+          {done && unsubscribeId && !feedbackDone && (
+            <div className="border-border mt-5 border-t pt-5">
+              <p className="mb-3 text-sm font-medium">
+                Mind telling us why?{" "}
+                <span className="text-muted-foreground font-normal">(optional)</span>
+              </p>
+              <RadioGroup value={reason} onValueChange={setReason} className="mb-4 gap-2">
+                {UNSUBSCRIBE_REASONS.map((r) => (
+                  <RadioGroupLabel key={r.value} htmlFor={`reason-${r.value}`}>
+                    <RadioGroupItem value={r.value} id={`reason-${r.value}`} />
+                    <span>{r.label}</span>
+                  </RadioGroupLabel>
+                ))}
+              </RadioGroup>
+
+              {reason && (
+                <Textarea
+                  rows={3}
+                  maxLength={REASON_COMMENT_MAX}
+                  className="mb-4"
+                  placeholder="Anything else you'd like us to know? (optional)"
+                  value={comment}
+                  onChange={(e) => setComment(e.target.value)}
+                />
+              )}
+
+              <div className="flex gap-2">
+                <Button disabled={!reason || feedbackBusy} onClick={sendFeedback}>
+                  Send feedback
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={feedbackBusy}
+                  onClick={() => setFeedbackDone(true)}
+                >
+                  No thanks
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {done && feedbackDone && reason && (
+            <p className="text-muted-foreground mt-5 text-sm">Thanks — that's helpful.</p>
+          )}
         </div>
       </div>
     </div>

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../lib/api.js";
 import type { CampaignUnsubscribe, UnsubscribeSource } from "../lib/types.js";
+import { unsubscribeReasonLabel } from "../lib/unsubscribeReasons.js";
 import {
   Table,
   TableHeader,
@@ -44,6 +45,7 @@ export default function CampaignUnsubscribesTable({ campaignId }: { campaignId: 
           <TableRow>
             <TableHead>Subscriber</TableHead>
             <TableHead>Lists left</TableHead>
+            <TableHead>Reason</TableHead>
             <TableHead>Via</TableHead>
             <TableHead>When</TableHead>
           </TableRow>
@@ -79,6 +81,26 @@ export default function CampaignUnsubscribesTable({ campaignId }: { campaignId: 
                     </span>
                   )}
                 </div>
+              </TableCell>
+              <TableCell>
+                {u.reason ? (
+                  <>
+                    {unsubscribeReasonLabel(u.reason)}
+                    {/* Free text from a public page -- rendered as text, never
+                        as markup, and clamped so one long answer can't stretch
+                        the row. */}
+                    {u.reason_comment && (
+                      <div
+                        className="text-muted-foreground line-clamp-3 text-xs"
+                        title={u.reason_comment}
+                      >
+                        {u.reason_comment}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <span className="text-muted-foreground">—</span>
+                )}
               </TableCell>
               <TableCell className="text-muted-foreground">{SOURCE_LABELS[u.source]}</TableCell>
               <TableCell className="text-muted-foreground">
