@@ -4,6 +4,16 @@ export type ListMembershipStatus = "unconfirmed" | "confirmed" | "unsubscribed";
 
 export interface SubscriberFilter {
   q?: string;
+  // Exact address match, unlike `q`'s substring search over email *and*
+  // name -- the lookup an integration keyed by email needs.
+  email?: string;
+  // JSONB containment against `attribs`: every key/value given must match.
+  // Backed by the jsonb_path_ops GIN index, so this stays an index scan
+  // rather than a sequential read of every contact.
+  attribs?: Record<string, unknown>;
+  // Array overlap: the contact carries *any* of these tags, matching the
+  // OR semantics list_ids already uses.
+  tags?: string[];
   // OR'd together: member of any of these lists. Paired with list_statuses
   // (when both given) as a single subscriber_lists condition -- list A +
   // status "unsubscribed" means "unsubscribed from A", not "unsubscribed
@@ -65,8 +75,13 @@ export function selectorWhereClause(
     return sql<boolean>`subscribers.id = ANY(${selector.ids}::int[])`;
   }
 
-  const { q } = selector.query;
+  const { q, email, attribs, tags } = selector.query;
   const conditions: RawBuilder<boolean>[] = [];
+  if (email) conditions.push(sql<boolean>`email = ${email}`);
+  if (attribs && Object.keys(attribs).length > 0) {
+    conditions.push(sql<boolean>`attribs @> ${JSON.stringify(attribs)}::jsonb`);
+  }
+  if (tags?.length) conditions.push(sql<boolean>`tags && ${tags}::text[]`);
   if (q) {
     const pattern = `%${q}%`;
     conditions.push(sql<boolean>`(email ilike ${pattern} OR name ilike ${pattern})`);

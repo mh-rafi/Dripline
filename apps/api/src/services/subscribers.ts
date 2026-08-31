@@ -13,10 +13,31 @@ export async function getSubscriberOrThrow(db: DB, id: number) {
   return subscriber;
 }
 
+export type AttribsMode = "merge" | "replace";
+
+/**
+ * How a write lands on an existing contact's `attribs`. `merge` is a shallow
+ * top-level JSONB merge, and it is the default everywhere a partial write is
+ * plausible: tags live inside `attribs`, so a blind replace silently untags
+ * the contact and drops whatever an earlier event stored. `replace` stays
+ * available for callers that genuinely hold the whole object (the admin
+ * profile editor, a CSV import configured that way).
+ */
+export function attribsAssignment(mode: AttribsMode, attribs: Record<string, unknown>) {
+  return mode === "replace"
+    ? attribs
+    : sql<Record<string, unknown>>`attribs || ${JSON.stringify(attribs)}::jsonb`;
+}
+
 export interface CreateSubscriberInput {
   email: string;
   name?: string;
   attribs?: Record<string, unknown>;
+  attribsMode?: AttribsMode;
+  // Only applied when the contact is created. An existing contact's tags are
+  // changed through the tag endpoints or an import's `tags_mode`, never as a
+  // side effect of an upsert.
+  tags?: string[];
 }
 
 /**
@@ -24,6 +45,9 @@ export interface CreateSubscriberInput {
  * genuinely new. Every path that can introduce a contact (admin create, CSV
  * import, automation webhook) goes through here or reports creation itself, so
  * the trigger can't fire twice for one person.
+ *
+ * Returns `created` so callers can tell an insert from an update -- the API
+ * answers 201 vs 200 on it, and only the insert fires `contact_created`.
  */
 export async function createSubscriber(db: DB, input: CreateSubscriberInput) {
   const existing = await db
@@ -33,26 +57,36 @@ export async function createSubscriber(db: DB, input: CreateSubscriberInput) {
     .executeTakeFirst();
 
   if (existing) {
-    if (input.name === undefined && input.attribs === undefined) return existing;
-    return db
+    if (input.name === undefined && input.attribs === undefined) {
+      return { subscriber: existing, created: false };
+    }
+    const subscriber = await db
       .updateTable("subscribers")
       .set({
         ...(input.name !== undefined ? { name: input.name } : {}),
-        ...(input.attribs !== undefined ? { attribs: input.attribs } : {}),
+        ...(input.attribs !== undefined
+          ? { attribs: attribsAssignment(input.attribsMode ?? "merge", input.attribs) }
+          : {}),
       })
       .where("id", "=", existing.id)
       .returningAll()
       .executeTakeFirstOrThrow();
+    return { subscriber, created: false };
   }
 
   const subscriber = await db
     .insertInto("subscribers")
-    .values({ email: input.email, name: input.name ?? "", attribs: input.attribs ?? {} })
+    .values({
+      email: input.email,
+      name: input.name ?? "",
+      attribs: input.attribs ?? {},
+      tags: input.tags ?? [],
+    })
     .returningAll()
     .executeTakeFirstOrThrow();
 
   await fireEvent(db, { type: "contact_created", subscriberId: subscriber.id, data: {} });
-  return subscriber;
+  return { subscriber, created: true };
 }
 
 /**
@@ -70,21 +104,35 @@ export async function addToList(
   subscriberId: number,
   listId: number,
   status?: "unconfirmed" | "confirmed",
+  opts: { resubscribe?: boolean } = {},
 ) {
   const resolvedStatus = status ?? (await defaultStatusForList(db, listId));
 
-  await db
+  const applied = await db
     .insertInto("subscriber_lists")
     .values({ subscriber_id: subscriberId, list_id: listId, status: resolvedStatus })
-    .onConflict((oc) =>
+    .onConflict((oc) => {
       // Clearing pre_blocklist_status here too: an explicit status change
       // supersedes whatever blocklisting had stashed, so a later unblock
       // doesn't clobber it back.
-      oc
+      const update = oc
         .columns(["subscriber_id", "list_id"])
-        .doUpdateSet({ status: resolvedStatus, pre_blocklist_status: null }),
-    )
-    .execute();
+        .doUpdateSet({ status: resolvedStatus, pre_blocklist_status: null });
+      // An unsubscribe is sticky: adding someone to a list they already opted
+      // out of must not quietly opt them back in, or any recurring upsert
+      // (a nightly CRM sync, an automation re-applying a list) resurrects
+      // people who left. Only a caller that says so explicitly -- the admin
+      // changing one membership by hand -- may raise it.
+      return opts.resubscribe
+        ? update
+        : update.where("subscriber_lists.status", "!=", "unsubscribed");
+    })
+    .returning("subscriber_id")
+    .executeTakeFirst();
+
+  // Nothing landed (the row stayed unsubscribed), so no list was applied and
+  // the automation trigger must not fire.
+  if (!applied) return;
 
   await fireEvent(db, { type: "list_applied", subscriberId, data: { listId } });
 }
@@ -213,25 +261,29 @@ export async function unsubscribeFromAllLists(db: DB, subscriberId: number): Pro
   return changed.map((r) => r.list_id);
 }
 
-function getTags(attribs: Record<string, unknown>): string[] {
-  const tags = attribs.tags;
-  return Array.isArray(tags) ? tags.filter((t): t is string => typeof t === "string") : [];
-}
-
+/**
+ * Tags are a `text[]` column, not a key inside `attribs` -- see the
+ * 1755820800024 migration. Both writes are a single statement against the
+ * array so two concurrent tag changes can't clobber each other the way a
+ * read-modify-write of the whole object did.
+ */
 export async function addTag(db: DB, subscriberId: number, tag: string) {
-  const subscriber = await getSubscriberOrThrow(db, subscriberId);
-  const tags = getTags(subscriber.attribs);
-  if (!tags.includes(tag)) {
-    const attribs = { ...subscriber.attribs, tags: [...tags, tag] };
-    await db.updateTable("subscribers").set({ attribs }).where("id", "=", subscriberId).execute();
-  }
+  await getSubscriberOrThrow(db, subscriberId);
+  await db
+    .updateTable("subscribers")
+    .set({ tags: sql<string[]>`array_append(tags, ${tag})` })
+    .where("id", "=", subscriberId)
+    .where(sql<boolean>`NOT (${tag} = ANY(tags))`)
+    .execute();
 }
 
 export async function removeTag(db: DB, subscriberId: number, tag: string) {
-  const subscriber = await getSubscriberOrThrow(db, subscriberId);
-  const tags = getTags(subscriber.attribs).filter((t) => t !== tag);
-  const attribs = { ...subscriber.attribs, tags };
-  await db.updateTable("subscribers").set({ attribs }).where("id", "=", subscriberId).execute();
+  await getSubscriberOrThrow(db, subscriberId);
+  await db
+    .updateTable("subscribers")
+    .set({ tags: sql<string[]>`array_remove(tags, ${tag})` })
+    .where("id", "=", subscriberId)
+    .execute();
 }
 
 /**

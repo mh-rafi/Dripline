@@ -117,6 +117,7 @@ export async function renderCampaignEmail(
       Email: subscriber.email,
       Name: subscriber.name,
       Attribs: subscriber.attribs,
+      Tags: subscriber.tags,
     },
     Campaign: {
       ID: campaign.id,

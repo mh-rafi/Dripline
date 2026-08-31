@@ -15,7 +15,7 @@ import type { SubscriberRow } from "./subscriberExport.js";
 export function subscribersToCSV(rows: SubscriberRow[]): string {
   const DELIMITER = ",";
   const NEWLINE = "\n";
-  const HEADER = ["email", "name", "status", "attribs", "lists"];
+  const HEADER = ["email", "name", "status", "attribs", "tags", "lists"];
 
   const lines: string[] = [HEADER.map(quoteField).join(DELIMITER)];
 
@@ -25,6 +25,9 @@ export function subscribersToCSV(rows: SubscriberRow[]): string {
       row.name,
       row.status,
       row.attribs ? JSON.stringify(row.attribs) : "",
+      // Same separator as the `lists` column, and the separator the import
+      // page splits a tags column on, so an export re-imports its tags.
+      row.tags?.length ? row.tags.join("; ") : "",
       row.lists,
     ];
     lines.push(fields.map((f) => quoteField(f ?? "")).join(DELIMITER));

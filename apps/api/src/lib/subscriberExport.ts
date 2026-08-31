@@ -4,5 +4,6 @@ export interface SubscriberRow {
   name: string;
   status: string;
   attribs: Record<string, unknown> | null;
+  tags: string[] | null;
   lists: string;
 }

@@ -83,7 +83,7 @@ export default function SubscriberDetail() {
 
   if (!subscriber) return <Skeleton className="h-48" />;
 
-  const tags = Array.isArray(subscriber.attribs.tags) ? (subscriber.attribs.tags as string[]) : [];
+  const tags = subscriber.tags ?? [];
   const availableLists = lists.filter((l) => !subscriber.lists.some((sl) => sl.id === l.id));
 
   async function addToList() {
@@ -150,7 +150,9 @@ export default function SubscriberDetail() {
     setSavingProfile(true);
     setProfileError(null);
     try {
-      await api.patch(`/subscribers/${id}`, { name, attribs });
+      // The editor holds the whole object, so a keystroke deleting a key has
+      // to actually delete it -- the API merges by default.
+      await api.patch(`/subscribers/${id}`, { name, attribs, attribs_mode: "replace" });
       setEditingProfile(false);
       load();
     } catch (err) {

@@ -8,6 +8,7 @@ export interface SubscribersTable {
   email: string;
   name: Generated<string>;
   attribs: Generated<Record<string, unknown>>;
+  tags: Generated<string[]>;
   status: Generated<"enabled" | "blocklisted">;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;

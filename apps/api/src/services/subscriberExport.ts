@@ -25,6 +25,7 @@ export async function exportSubscribers(
       s.name,
       s.status::text AS status,
       s.attribs,
+      s.tags,
       COALESCE(
         (
           SELECT string_agg(l.name || ':' || sl.status::text, '; ')

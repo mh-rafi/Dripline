@@ -30,7 +30,7 @@ import {
   Typography,
 } from "../components/ui/index.js";
 
-type ColumnRole = "ignore" | "email" | "name" | "attribs_json" | "attribute";
+type ColumnRole = "ignore" | "email" | "name" | "attribs_json" | "tags" | "attribute";
 
 interface ColumnMapping {
   index: number;
@@ -54,13 +54,14 @@ function guessRole(header: string): ColumnRole {
   if (h === "email" || h === "email address" || h.includes("email")) return "email";
   if (h === "name" || h === "full name") return "name";
   if (h === "attribs" || h === "attributes") return "attribs_json";
+  if (h === "tags") return "tags";
   return "attribute";
 }
 
 function dedupeSingletonRoles(cols: ColumnMapping[]): ColumnMapping[] {
   const seen = new Set<ColumnRole>();
   return cols.map((c) => {
-    if (c.role === "email" || c.role === "name" || c.role === "attribs_json") {
+    if (c.role === "email" || c.role === "name" || c.role === "attribs_json" || c.role === "tags") {
       if (seen.has(c.role)) return { ...c, role: "attribute" as ColumnRole };
       seen.add(c.role);
     }
@@ -110,6 +111,7 @@ export default function SubscriberImport() {
   const [overwriteUserInfo, setOverwriteUserInfo] = useState(false);
   const [overwriteSubscriptionStatus, setOverwriteSubscriptionStatus] = useState(false);
   const [attribsMode, setAttribsMode] = useState<AttribsMode>("merge");
+  const [tagsMode, setTagsMode] = useState<AttribsMode>("merge");
   const [fixedAttribs, setFixedAttribs] = useState<FixedAttribute[]>([]);
   const nextFixedId = useRef(1);
   const [delimiter, setDelimiter] = useState(",");
@@ -120,7 +122,12 @@ export default function SubscriberImport() {
   const [error, setError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
-  const [result, setResult] = useState<{ imported: number; skipped: number } | null>(null);
+  const [result, setResult] = useState<{
+    created: number;
+    updated: number;
+    failed: { email: string; error: string }[];
+    skipped: number;
+  } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -176,7 +183,10 @@ export default function SubscriberImport() {
     setMapping((cols) =>
       cols.map((c) => {
         if (c.index === index) return { ...c, role };
-        if ((role === "email" || role === "name" || role === "attribs_json") && c.role === role) {
+        if (
+          (role === "email" || role === "name" || role === "attribs_json" || role === "tags") &&
+          c.role === role
+        ) {
           return { ...c, role: "ignore" };
         }
         return c;
@@ -207,9 +217,12 @@ export default function SubscriberImport() {
 
   const emailColumn = mapping.find((c) => c.role === "email");
 
-  function buildSubscriber(
-    row: string[],
-  ): { email: string; name?: string; attribs?: Record<string, unknown> } | null {
+  function buildSubscriber(row: string[]): {
+    email: string;
+    name?: string;
+    attribs?: Record<string, unknown>;
+    tags?: string[];
+  } | null {
     if (!emailColumn) return null;
     const email = row[emailColumn.index]?.trim();
     if (!email) return null;
@@ -243,10 +256,21 @@ export default function SubscriberImport() {
       if (parsedValue) attribs[key] = parsedValue.value;
     }
 
+    // Split on ";" or "," so both the export format ("vip; beta") and a
+    // plainly comma-separated column import as tags.
+    const tagsColumn = mapping.find((c) => c.role === "tags");
+    const tags = tagsColumn
+      ? (row[tagsColumn.index] ?? "")
+          .split(/[;,]/)
+          .map((t) => t.trim())
+          .filter(Boolean)
+      : [];
+
     return {
       email,
       name: name || undefined,
       attribs: Object.keys(attribs).length ? attribs : undefined,
+      tags: tags.length ? tags : undefined,
     };
   }
 
@@ -279,26 +303,35 @@ export default function SubscriberImport() {
     setResult(null);
     setProgress({ done: 0, total: subscribers.length });
 
-    let imported = 0;
+    let createdTotal = 0;
+    let updatedTotal = 0;
+    const failedTotal: { email: string; error: string }[] = [];
     try {
       for (let i = 0; i < subscribers.length; i += BATCH_SIZE) {
         const batch = subscribers.slice(i, i + BATCH_SIZE);
-        const res = await api.post<{ imported: number }>("/subscribers/import", {
+        const res = await api.post<{
+          created: number;
+          updated: number;
+          failed: { email: string; error: string }[];
+        }>("/subscribers/import", {
           mode,
           status,
           list_ids: mode === "subscribe" ? listIds : [],
           overwrite_user_info: overwriteUserInfo,
           overwrite_subscription_status: overwriteSubscriptionStatus,
           attribs_mode: attribsMode,
+          tags_mode: tagsMode,
           subscribers: batch,
         });
-        imported += res.imported;
+        createdTotal += res.created;
+        updatedTotal += res.updated;
+        failedTotal.push(...res.failed);
         setProgress({
           done: Math.min(i + BATCH_SIZE, subscribers.length),
           total: subscribers.length,
         });
       }
-      setResult({ imported, skipped });
+      setResult({ created: createdTotal, updated: updatedTotal, failed: failedTotal, skipped });
     } catch (err) {
       setError(err instanceof Error ? err.message : "import failed");
     } finally {
@@ -410,8 +443,26 @@ export default function SubscriberImport() {
             </Select>
             <p className="text-muted-foreground text-xs">
               Merge adds and updates only the imported keys and keeps every other attribute. Replace
-              swaps the whole attributes object, which also discards tags. Leave alone imports
-              nothing into the attributes of subscribers who already exist.
+              swaps the whole attributes object. Leave alone imports nothing into the attributes of
+              subscribers who already exist.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <FormLabel>Tags of existing subscribers</FormLabel>
+            <Select value={tagsMode} onValueChange={(v) => setTagsMode(v as AttribsMode)}>
+              <SelectTrigger className="w-56">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="merge">Merge</SelectItem>
+                <SelectItem value="replace">Replace</SelectItem>
+                <SelectItem value="skip">Leave alone</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-muted-foreground text-xs">
+              Only applies to rows with a column mapped to Tags. Merge adds the imported tags and
+              keeps the ones already on the contact; replace swaps the whole set.
             </p>
           </div>
 
@@ -503,6 +554,7 @@ export default function SubscriberImport() {
                           <SelectItem value="email">Email</SelectItem>
                           <SelectItem value="name">Name</SelectItem>
                           <SelectItem value="attribs_json">Attributes (JSON)</SelectItem>
+                          <SelectItem value="tags">Tags</SelectItem>
                           <SelectItem value="attribute">Attribute</SelectItem>
                         </SelectContent>
                       </Select>
@@ -646,13 +698,32 @@ export default function SubscriberImport() {
               </p>
             )}
             {result && (
-              <p className="text-success text-sm">
-                Imported {result.imported} subscriber{result.imported === 1 ? "" : "s"}
-                {result.skipped > 0
-                  ? `, skipped ${result.skipped} row${result.skipped === 1 ? "" : "s"} without a valid email`
-                  : ""}
-                .
-              </p>
+              <div className="space-y-2">
+                <p className="text-success text-sm">
+                  Created {result.created}, updated {result.updated}
+                  {result.skipped > 0
+                    ? `, skipped ${result.skipped} row${result.skipped === 1 ? "" : "s"} without a valid email`
+                    : ""}
+                  .
+                </p>
+                {result.failed.length > 0 && (
+                  <Alert variant="destructive">
+                    <p className="text-sm font-medium">
+                      {result.failed.length} row{result.failed.length === 1 ? "" : "s"} failed:
+                    </p>
+                    <ul className="mt-1 space-y-0.5 text-xs">
+                      {result.failed.slice(0, 10).map((f) => (
+                        <li key={f.email}>
+                          {f.email} — {f.error}
+                        </li>
+                      ))}
+                    </ul>
+                    {result.failed.length > 10 && (
+                      <p className="mt-1 text-xs">…and {result.failed.length - 10} more.</p>
+                    )}
+                  </Alert>
+                )}
+              </div>
             )}
 
             <Button onClick={runImport} disabled={importing || !emailColumn}>

@@ -48,6 +48,7 @@ const CONTACT: MergeFieldGroup = {
       label: "Custom attribute",
       example: "any key from the contact's attributes",
     },
+    { tag: "{{ Subscriber.Tags }}", label: "Tags", example: "vip, beta" },
   ],
 };
 

@@ -8,6 +8,7 @@ import {
   addToList,
   addToListForImport,
   blocklistSubscriber,
+  attribsAssignment,
   createSubscriber,
   getSubscriberOrThrow,
   removeFromList,
@@ -18,17 +19,22 @@ import type { SubscriberFilter } from "../services/subscriberFilter.js";
 import { bulkBlocklist, bulkDelete, bulkLists } from "../services/bulkActions.js";
 import { exportSubscribers } from "../services/subscriberExport.js";
 
+const AttribsModeEnum = z.enum(["merge", "replace"]);
+
 const CreateSubscriber = z.object({
   email: z.string().email(),
   name: z.string().optional(),
   status: z.enum(["enabled", "blocklisted"]).default("enabled"),
   attribs: z.record(z.string(), z.unknown()).optional(),
+  attribs_mode: AttribsModeEnum.default("merge"),
   list_ids: z.array(z.number().int()).optional(),
   preconfirm: z.boolean().default(false),
+  resubscribe: z.boolean().default(false),
 });
 const UpdateSubscriber = z.object({
   name: z.string().optional(),
   attribs: z.record(z.string(), z.unknown()).optional(),
+  attribs_mode: AttribsModeEnum.default("merge"),
 });
 const ListMembershipStatusEnum = z.enum(["unconfirmed", "confirmed", "unsubscribed"]);
 
@@ -44,6 +50,29 @@ function commaList<T extends z.ZodTypeAny>(schema: T) {
 
 const ListQuery = z.object({
   q: z.string().optional(),
+  // Exact match, unlike `q`'s substring search -- an external system keyed by
+  // email needs a lookup that can't also return someone else's address.
+  email: z.string().optional(),
+  // JSON object in the query string, matched by containment:
+  // `?attribs={"plan":"pro"}`. A malformed value is a validation error rather
+  // than a silently ignored filter, which would return the wrong rows.
+  attribs: z
+    .string()
+    .optional()
+    .transform((v, ctx) => {
+      if (v === undefined || v === "") return undefined;
+      try {
+        const parsed: unknown = JSON.parse(v);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          return parsed as Record<string, unknown>;
+        }
+      } catch {
+        // fall through to the issue below
+      }
+      ctx.addIssue({ code: "custom", message: "attribs must be a JSON object" });
+      return z.NEVER;
+    }),
+  tags: commaList(z.string()),
   list_ids: commaList(z.coerce.number().int()),
   list_statuses: commaList(ListMembershipStatusEnum),
   blocklisted: z
@@ -64,6 +93,9 @@ const BulkSelector = z.union([
   z.object({
     query: z.object({
       q: z.string().optional(),
+      email: z.string().optional(),
+      attribs: z.record(z.string(), z.unknown()).optional(),
+      tags: z.array(z.string()).optional(),
       list_ids: z.array(z.number().int()).optional(),
       list_statuses: z.array(ListMembershipStatusEnum).optional(),
       blocklisted: z.boolean().optional(),
@@ -80,6 +112,15 @@ function applySubscriberFilter<O>(
   filter: SubscriberFilter,
 ): SelectQueryBuilder<Database, "subscribers", O> {
   let b = builder;
+  if (filter.email) b = b.where("email", "=", filter.email);
+  if (filter.attribs && Object.keys(filter.attribs).length > 0) {
+    const attribs = filter.attribs;
+    b = b.where(sql<boolean>`attribs @> ${JSON.stringify(attribs)}::jsonb`);
+  }
+  if (filter.tags?.length) {
+    const tags = filter.tags;
+    b = b.where(sql<boolean>`tags && ${tags}::text[]`);
+  }
   if (filter.q) {
     const q = filter.q;
     b = b.where((eb) => eb.or([eb("email", "ilike", `%${q}%`), eb("name", "ilike", `%${q}%`)]));
@@ -115,6 +156,9 @@ export default async function subscriberRoutes(app: FastifyInstance, opts: { db:
       const query = ListQuery.parse(req.query);
       const filter: SubscriberFilter = {
         q: query.q,
+        email: query.email,
+        attribs: query.attribs,
+        tags: query.tags,
         list_ids: query.list_ids,
         list_statuses: query.list_statuses,
         blocklisted: query.blocklisted,
@@ -164,14 +208,18 @@ export default async function subscriberRoutes(app: FastifyInstance, opts: { db:
     { preHandler: app.requirePermission("subscribers:manage") },
     async (req, reply) => {
       const body = CreateSubscriber.parse(req.body);
-      let subscriber = await createSubscriber(db, {
+      const upsert = await createSubscriber(db, {
         email: body.email,
         name: body.name,
         attribs: body.attribs,
+        attribsMode: body.attribs_mode,
       });
+      let subscriber = upsert.subscriber;
 
       for (const listId of body.list_ids ?? []) {
-        await addToList(db, subscriber.id, listId, body.preconfirm ? "confirmed" : undefined);
+        await addToList(db, subscriber.id, listId, body.preconfirm ? "confirmed" : undefined, {
+          resubscribe: body.resubscribe,
+        });
       }
 
       if (body.status === "blocklisted") {
@@ -179,7 +227,7 @@ export default async function subscriberRoutes(app: FastifyInstance, opts: { db:
         subscriber = await getSubscriberOrThrow(db, subscriber.id);
       }
 
-      reply.code(201);
+      reply.code(upsert.created ? 201 : 200);
       return subscriber;
     },
   );
@@ -195,7 +243,9 @@ export default async function subscriberRoutes(app: FastifyInstance, opts: { db:
         .updateTable("subscribers")
         .set({
           ...(body.name !== undefined ? { name: body.name } : {}),
-          ...(body.attribs ? { attribs: body.attribs } : {}),
+          ...(body.attribs !== undefined
+            ? { attribs: attribsAssignment(body.attribs_mode, body.attribs) }
+            : {}),
         })
         .where("id", "=", id)
         .returningAll()
@@ -243,7 +293,9 @@ export default async function subscriberRoutes(app: FastifyInstance, opts: { db:
       const { status } = z
         .object({ status: z.enum(["unconfirmed", "confirmed"]).optional() })
         .parse(req.body ?? {});
-      await addToList(db, id, listId, status);
+      // Explicit, per-contact admin action: this is the one path allowed to
+      // lift a membership back out of `unsubscribed`.
+      await addToList(db, id, listId, status, { resubscribe: true });
       return { ok: true };
     },
   );
@@ -287,13 +339,20 @@ export default async function subscriberRoutes(app: FastifyInstance, opts: { db:
     overwrite_user_info: z.boolean().default(false),
     overwrite_subscription_status: z.boolean().default(false),
     attribs_mode: z.enum(["merge", "replace", "skip"]).default("merge"),
-    subscribers: z.array(
-      z.object({
-        email: z.string().email(),
-        name: z.string().optional(),
-        attribs: z.record(z.string(), z.unknown()).optional(),
-      }),
-    ),
+    tags_mode: z.enum(["merge", "replace", "skip"]).default("merge"),
+    // Capped so one request stays a bounded unit of work: the admin UI posts
+    // in batches of 300, and an uncapped array is a request that can run for
+    // minutes and then time out with nothing to report.
+    subscribers: z
+      .array(
+        z.object({
+          email: z.string().email(),
+          name: z.string().optional(),
+          attribs: z.record(z.string(), z.unknown()).optional(),
+          tags: z.array(z.string()).optional(),
+        }),
+      )
+      .max(1000),
   });
 
   app.post(
@@ -302,69 +361,93 @@ export default async function subscriberRoutes(app: FastifyInstance, opts: { db:
     async (req) => {
       const body = ImportBody.parse(req.body);
 
-      let imported = 0;
+      let created = 0;
+      let updated = 0;
+      const failed: { email: string; error: string }[] = [];
+
       for (const s of body.subscribers) {
-        const existing = await db
-          .selectFrom("subscribers")
-          .select("id")
-          .where("email", "=", s.email)
-          .executeTakeFirst();
+        // Per row, not per request: one bad address (or a row that trips a
+        // constraint) must not discard the hundreds that imported fine, and
+        // the caller needs to know *which* rows to fix. Rows land
+        // independently -- an import is not atomic.
+        let wasCreated: boolean;
+        try {
+          const existing = await db
+            .selectFrom("subscribers")
+            .select("id")
+            .where("email", "=", s.email)
+            .executeTakeFirst();
 
-        let subscriberId: number;
-        if (existing) {
-          subscriberId = existing.id;
-          // `attribs` is deliberately not gated on `overwrite_user_info` (which now
-          // only covers `name`): the default `merge` has to be able to add keys to an
-          // existing contact without clobbering the rest. A full replace would also
-          // wipe `tags`, which live inside attribs.
-          const update = {
-            ...(body.overwrite_user_info && s.name !== undefined ? { name: s.name } : {}),
-            ...(s.attribs && body.attribs_mode !== "skip"
-              ? {
-                  attribs:
-                    body.attribs_mode === "replace"
-                      ? s.attribs
-                      : sql<
-                          Record<string, unknown>
-                        >`attribs || ${JSON.stringify(s.attribs)}::jsonb`,
-                }
-              : {}),
-          };
-          if (Object.keys(update).length > 0) {
-            await db
-              .updateTable("subscribers")
-              .set(update)
-              .where("id", "=", subscriberId)
-              .execute();
+          let subscriberId: number;
+          if (existing) {
+            subscriberId = existing.id;
+            // `attribs` is deliberately not gated on `overwrite_user_info` (which now
+            // only covers `name`): the default `merge` has to be able to add keys to an
+            // existing contact without clobbering the rest.
+            const update = {
+              ...(body.overwrite_user_info && s.name !== undefined ? { name: s.name } : {}),
+              ...(s.attribs && body.attribs_mode !== "skip"
+                ? { attribs: attribsAssignment(body.attribs_mode, s.attribs) }
+                : {}),
+              ...(s.tags?.length && body.tags_mode !== "skip"
+                ? {
+                    tags:
+                      body.tags_mode === "replace"
+                        ? s.tags
+                        : sql<string[]>`(
+                            SELECT COALESCE(array_agg(DISTINCT tag), '{}')
+                            FROM unnest(tags || ${s.tags}::text[]) AS tag
+                          )`,
+                  }
+                : {}),
+            };
+            if (Object.keys(update).length > 0) {
+              await db
+                .updateTable("subscribers")
+                .set(update)
+                .where("id", "=", subscriberId)
+                .execute();
+            }
+            wasCreated = false;
+          } else {
+            // Goes through the service so an imported contact fires
+            // `contact_created` like any other -- a large import therefore enrolls
+            // every new contact, which is intended (see docs/plan/automations_v2.md).
+            const { subscriber } = await createSubscriber(db, {
+              email: s.email,
+              name: s.name,
+              attribs: s.attribs,
+              tags: s.tags,
+            });
+            subscriberId = subscriber.id;
+            wasCreated = true;
           }
-        } else {
-          // Goes through the service so an imported contact fires
-          // `contact_created` like any other -- a large import therefore enrolls
-          // every new contact, which is intended (see docs/plan/automations_v2.md).
-          const row = await createSubscriber(db, {
+
+          if (body.mode === "blocklist") {
+            await blocklistSubscriber(db, subscriberId);
+          } else {
+            for (const listId of body.list_ids) {
+              await addToListForImport(
+                db,
+                subscriberId,
+                listId,
+                body.status,
+                body.overwrite_subscription_status,
+              );
+            }
+          }
+          // Counted only once the row is fully applied, lists included -- a
+          // row that threw halfway is reported as failed, not as imported.
+          if (wasCreated) created++;
+          else updated++;
+        } catch (err) {
+          failed.push({
             email: s.email,
-            name: s.name,
-            attribs: s.attribs,
+            error: err instanceof Error ? err.message : "import failed",
           });
-          subscriberId = row.id;
         }
-
-        if (body.mode === "blocklist") {
-          await blocklistSubscriber(db, subscriberId);
-        } else {
-          for (const listId of body.list_ids) {
-            await addToListForImport(
-              db,
-              subscriberId,
-              listId,
-              body.status,
-              body.overwrite_subscription_status,
-            );
-          }
-        }
-        imported++;
       }
-      return { imported };
+      return { created, updated, failed };
     },
   );
 

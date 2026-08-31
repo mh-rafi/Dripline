@@ -92,3 +92,60 @@ blocklisted can't later be clobbered by an unrelated unblock.
 blocklisting round-trips back exactly on unblock; a genuinely-already-unsubscribed one
 stays unsubscribed; a second blocklist/unblock cycle behaves correctly with no leftover
 stashed state.
+
+## Update: subscriber write semantics, tags as a column, filterable attributes (2026-08-31)
+
+**Problem:** integrating the API from another project surfaced a cluster of related
+issues, all rooted in `attribs` being both the extension point _and_ the place tags
+lived.
+
+- `POST /subscribers`, `PATCH /subscribers/:id` and the automation webhook replaced a
+  contact's whole `attribs` object, so any partial write dropped keys an earlier write
+  had set -- and untagged the contact, since tags were `attribs.tags`. Merging was only
+  reachable through `POST /subscribers/import`, which also meant an integration doing
+  routine attribute updates needed `subscribers:import`.
+- `addToList` clobbered an existing membership's status unconditionally, so a recurring
+  upsert (a nightly sync, an automation re-applying a list) silently resurrected people
+  who had unsubscribed.
+- There was no exact-email lookup: `q` is `ilike '%…%'` over email _and_ name, so an
+  address search could return someone else's contact.
+- `attribs` and tags weren't queryable at all, and had no index -- segmenting on a custom
+  field meant exporting everything and filtering client-side.
+- `POST /subscribers` always answered `201`, even when it updated; import took an
+  unbounded array, aborted the whole batch on one bad row, and reported only
+  `{ imported }`.
+
+**Fixed:**
+
+- `attribs_mode` (`merge | replace`) on `POST /subscribers` and `PATCH /subscribers/:id`,
+  defaulting to `merge`; the webhook always merges. One helper (`attribsAssignment`)
+  backs all three plus import, so the merge SQL lives in one place. The admin profile
+  editor sends `replace` explicitly, since that textarea holds the whole object.
+- `addToList` takes `opts.resubscribe` and otherwise guards its conflict update with
+  `WHERE status != 'unsubscribed'`, and only fires `list_applied` when a row actually
+  landed. `PUT /subscribers/:id/lists/:listId` passes `resubscribe: true` -- an explicit
+  per-contact admin action is the one path allowed to lift an opt-out.
+- Migration `1755820800024` moves tags to a `subscribers.tags text[]` column, backfilling
+  from `attribs.tags` and dropping the key. Chosen over a `tags`/`subscriber_tags` pair:
+  it's a small unordered set, needs no join in the list query, and is GIN-indexable.
+  Rename/merge stays doable later as array ops without another schema change.
+  `{{ Subscriber.Tags }}` is the template variable; `{{ Subscriber.Attribs.tags }}` is gone.
+- Same migration adds GIN indexes on `tags` and on `attribs` (`jsonb_path_ops`), backing
+  new `attribs` (containment) and `tags` (overlap) filters plus an exact `email` filter.
+  All three are wired into both filter implementations -- the Kysely one for the listing
+  and the raw-SQL `selectorWhereClause` for bulk actions -- so they can't drift.
+- `POST /subscribers` answers `201` on create, `200` on update (`createSubscriber` now
+  returns `{ subscriber, created }`). Import caps at 1000 rows, catches per row, and
+  returns `{ created, updated, failed: [{ email, error }] }`; rows land independently, so
+  an import is explicitly not atomic. CSV export gained a `tags` column and the import
+  page a Tags column role, so an export still re-imports cleanly.
+
+**Status: verified against real Postgres.** Service-level checks ran inside rolled-back
+transactions: merge preserves earlier keys and tags while explicit `replace` clears only
+attributes; a plain add leaves an unsubscribed membership alone while `resubscribe: true`
+lifts it; the backfill moves tags, drops non-string elements and strips the key; tag
+writes are idempotent and parameterized (a tag containing SQL is stored verbatim);
+containment and overlap filters return the right rows and their params bind; CSV carries
+tags. Both GIN indexes are used (confirmed via `EXPLAIN` with `enable_seqscan=off` -- the
+dev table is too small for the planner to pick them otherwise). Not exercised end-to-end
+over HTTP: the Zod query-string parsing and status codes.

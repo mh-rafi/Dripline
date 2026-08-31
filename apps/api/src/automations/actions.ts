@@ -104,6 +104,7 @@ const sendCustomEmail = defineAction({
         Email: subscriber.email,
         Name: subscriber.name,
         Attribs: subscriber.attribs,
+        Tags: subscriber.tags,
       },
       Automation: { ID: automation.id, UUID: automation.uuid, Name: automation.name },
       UnsubscribeURL: unsub.page,

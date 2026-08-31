@@ -4,6 +4,7 @@ export interface Subscriber {
   email: string;
   name: string;
   attribs: Record<string, unknown>;
+  tags: string[];
   status: "enabled" | "blocklisted";
   created_at: string;
 }

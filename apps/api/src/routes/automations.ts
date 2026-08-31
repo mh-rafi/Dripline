@@ -105,10 +105,14 @@ export default async function automationRoutes(app: FastifyInstance, opts: { db:
       let subscriberId = body.subscriber_id ?? null;
       if (!subscriberId && body.email) {
         const { createSubscriber } = await import("../services/subscribers.js");
-        const subscriber = await createSubscriber(db, {
+        // Merge, never replace: repeated events for one contact each carry a
+        // partial payload, so a replace would have every webhook wipe what the
+        // last one stored (tags included).
+        const { subscriber } = await createSubscriber(db, {
           email: body.email,
           name: body.name,
           attribs: body.attribs,
+          attribsMode: "merge",
         });
         subscriberId = subscriber.id;
       }
