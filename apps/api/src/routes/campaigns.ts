@@ -17,6 +17,7 @@ import {
   pauseCampaign,
   previewCampaign,
   sendTestEmail,
+  setCampaignLists,
   startCampaign,
 } from "../services/campaigns.js";
 
@@ -284,14 +285,7 @@ export default async function campaignRoutes(
     async (req) => {
       const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
       const { list_ids } = z.object({ list_ids: z.array(z.number().int()) }).parse(req.body);
-      await db.deleteFrom("campaign_lists").where("campaign_id", "=", id).execute();
-      if (list_ids.length > 0) {
-        await db
-          .insertInto("campaign_lists")
-          .values(list_ids.map((list_id) => ({ campaign_id: id, list_id })))
-          .execute();
-      }
-      return { ok: true };
+      return setCampaignLists(db, id, list_ids);
     },
   );
 

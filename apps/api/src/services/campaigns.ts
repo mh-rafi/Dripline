@@ -105,25 +105,37 @@ export async function duplicateCampaign(db: DB, id: number) {
 }
 
 /**
+ * The single definition of "is this contact a recipient of this campaign",
+ * shared by the enqueue at start and the prune after a list is removed -- the
+ * two must never disagree about who belongs in the queue.
+ */
+function eligibleRecipientIds(campaignId: number) {
+  return sql`
+    SELECT sl.subscriber_id AS subscriber_id
+    FROM subscriber_lists sl
+    JOIN campaign_lists cl ON cl.list_id = sl.list_id AND cl.campaign_id = ${campaignId}
+    JOIN lists l ON l.id = sl.list_id
+    JOIN subscribers s ON s.id = sl.subscriber_id
+    WHERE s.status != 'blocklisted'
+      AND (
+        (l.optin = 'double' AND sl.status = 'confirmed') OR
+        (l.optin != 'double' AND sl.status != 'unsubscribed')
+      )
+  `;
+}
+
+/**
  * Materializes campaign_emails rows for every currently-eligible subscriber
  * across the campaign's lists. Idempotent (ON CONFLICT DO NOTHING) so it's
- * safe to call again on resume -- e.g. after list membership changed while
- * paused, new members are picked up without touching existing rows.
+ * safe to call again on resume -- e.g. after a list was added while paused,
+ * its members are picked up without touching existing rows.
  */
 async function enqueueEligibleRecipients(db: DB, campaignId: number): Promise<number> {
   const result = await sql<{ inserted: number }>`
     WITH inserted AS (
       INSERT INTO campaign_emails (campaign_id, subscriber_id, status)
-      SELECT DISTINCT ${campaignId}::int, s.id, 'pending'
-      FROM subscribers s
-      JOIN subscriber_lists sl ON sl.subscriber_id = s.id
-      JOIN campaign_lists cl ON cl.list_id = sl.list_id AND cl.campaign_id = ${campaignId}
-      JOIN lists l ON l.id = sl.list_id
-      WHERE s.status != 'blocklisted'
-        AND (
-          (l.optin = 'double' AND sl.status = 'confirmed') OR
-          (l.optin != 'double' AND sl.status != 'unsubscribed')
-        )
+      SELECT DISTINCT ${campaignId}::int, e.subscriber_id, 'pending'
+      FROM (${eligibleRecipientIds(campaignId)}) e
       ON CONFLICT (campaign_id, subscriber_id) DO NOTHING
       RETURNING 1
     )
@@ -131,6 +143,72 @@ async function enqueueEligibleRecipients(db: DB, campaignId: number): Promise<nu
   `.execute(db);
 
   return result.rows[0]?.inserted ?? 0;
+}
+
+/**
+ * The other half of enqueueEligibleRecipients: drops queued-but-not-yet-sent
+ * recipients who are no longer reachable through any list the campaign still
+ * has. Removing a list doesn't retract the campaign_emails rows that were
+ * materialized when the campaign started, and mailing someone you just
+ * deselected is the one mistake here that can't be taken back.
+ *
+ * Only 'pending' rows go. 'sent'/'failed'/'skipped' are history, and 'queued'
+ * is already in flight. A contact reachable through another list the campaign
+ * still has stays queued -- membership of the removed list alone is not the
+ * test, eligibility through what remains is.
+ */
+async function pruneIneligiblePending(db: DB, campaignId: number): Promise<number> {
+  const result = await sql<{ removed: number }>`
+    WITH removed AS (
+      DELETE FROM campaign_emails ce
+      WHERE ce.campaign_id = ${campaignId}
+        AND ce.status = 'pending'
+        AND NOT EXISTS (
+          SELECT 1 FROM (${eligibleRecipientIds(campaignId)}) e
+          WHERE e.subscriber_id = ce.subscriber_id
+        )
+      RETURNING 1
+    )
+    SELECT COUNT(*)::int AS removed FROM removed
+  `.execute(db);
+
+  return result.rows[0]?.removed ?? 0;
+}
+
+/** Statuses whose recipient set can still be changed. 'running' is excluded
+ * deliberately: the dispatch worker is claiming batches concurrently, so the
+ * set would be edited out from under an in-flight tick. Pause first. */
+const LIST_EDITABLE: CampaignStatus[] = ["draft", "scheduled", "paused"];
+
+/**
+ * Replaces a campaign's lists and reconciles the send queue against them, in
+ * one transaction so the two can't be observed out of step.
+ *
+ * Adding a list needs nothing here -- the next start/resume enqueues its
+ * members. Removing one does: see pruneIneligiblePending.
+ */
+export async function setCampaignLists(
+  db: DB,
+  id: number,
+  listIds: number[],
+): Promise<{ ok: true; removed: number }> {
+  const campaign = await getCampaignOrThrow(db, id);
+  if (!LIST_EDITABLE.includes(campaign.status)) {
+    throw new BadRequestError(`cannot change lists while campaign is '${campaign.status}'`);
+  }
+
+  const removed = await db.transaction().execute(async (trx) => {
+    await trx.deleteFrom("campaign_lists").where("campaign_id", "=", id).execute();
+    if (listIds.length > 0) {
+      await trx
+        .insertInto("campaign_lists")
+        .values(listIds.map((list_id) => ({ campaign_id: id, list_id })))
+        .execute();
+    }
+    return pruneIneligiblePending(trx, id);
+  });
+
+  return { ok: true, removed };
 }
 
 function assertTransition(from: CampaignStatus, to: CampaignStatus): void {
