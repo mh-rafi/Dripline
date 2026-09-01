@@ -2,7 +2,7 @@ import { ImapFlow } from "imapflow";
 import { simpleParser } from "mailparser";
 import type { Selectable } from "kysely";
 import type { DB } from "../db/kysely.js";
-import type { ConnectionsTable, SmtpConnectionConfig } from "../db/types.js";
+import type { BounceType, ConnectionsTable, SmtpConnectionConfig } from "../db/types.js";
 import { recordBounce } from "./bounces.js";
 
 type Connection = Selectable<ConnectionsTable>;
@@ -90,10 +90,10 @@ export async function testBounceMailbox(mailbox: ResolvedBounceMailbox): Promise
   }
 }
 
-// ---- DSN parsing -------------------------------------------------------------
+// ---- report parsing ----------------------------------------------------------
 
-interface ParsedBounce {
-  type: "hard" | "soft";
+interface ParsedReport {
+  type: BounceType;
   recipientEmail: string | null;
   messageId: string | null;
 }
@@ -109,16 +109,93 @@ function headerValue(headers: Map<string, unknown>, name: string): string {
 }
 
 /**
- * Parses a raw fetched message and extracts bounce info, or null if it
- * doesn't look like a DSN (RFC 3464) at all -- the common case for
- * everything else sitting in a shared/noisy mailbox, discarded cheaply
- * without being written anywhere. See
+ * Feedback-Type values (RFC 5965 §7.3) that mean "this person reported us".
+ * `not-spam` is deliberately excluded -- it is a *positive* signal some
+ * providers send, and treating it as a complaint would blocklist someone for
+ * rescuing our mail from their junk folder. `opt-out` and `virus` are
+ * likewise ignored: neither is an abuse report, and an unsubscribe request
+ * has its own List-Unsubscribe path.
+ */
+const COMPLAINT_FEEDBACK_TYPES = /^(abuse|fraud)$/i;
+
+/** Pulls the original message's Message-ID out of an ARF report. The report
+ * carries the reported mail's headers as a `message/rfc822` or
+ * `text/rfc822-headers` part; the raw-source fallback skips the report's own
+ * Message-ID, which sits in the outer envelope headers. */
+async function originalMessageId(
+  parsed: Awaited<ReturnType<typeof simpleParser>>,
+  raw: Buffer,
+): Promise<string | null> {
+  const rfc822Part = parsed.attachments.find((a) => /message\/rfc822/i.test(a.contentType));
+  if (rfc822Part) {
+    const inner = await simpleParser(rfc822Part.content);
+    if (inner.messageId) return inner.messageId;
+  }
+
+  const headersPart = parsed.attachments.find((a) => /rfc822-headers/i.test(a.contentType));
+  if (headersPart) {
+    const match = headersPart.content.toString("utf8").match(/^Message-ID:\s*(<[^>]+>)/im);
+    if (match?.[1]) return match[1];
+  }
+
+  const outer = parsed.messageId;
+  for (const match of raw.toString("utf8").matchAll(/^Message-ID:\s*(<[^>]+>)/gim)) {
+    if (match[1] && match[1] !== outer) return match[1];
+  }
+  return null;
+}
+
+/**
+ * Parses an ARF feedback report (RFC 5965) -- what a mailbox provider's
+ * feedback loop sends when a recipient hits "mark as spam". Returns null if
+ * this isn't an ARF report, or is one we don't act on.
+ *
+ * Checked *before* the DSN branch because an ARF report is also a
+ * `multipart/report`: fall through to parseDsn and a complaint gets silently
+ * recorded as a soft bounce instead.
+ */
+async function parseArf(
+  parsed: Awaited<ReturnType<typeof simpleParser>>,
+  contentType: string,
+  raw: Buffer,
+): Promise<ParsedReport | null> {
+  const reportPart = parsed.attachments.find((a) =>
+    /message\/feedback-report/i.test(a.contentType),
+  );
+  if (!/report-type=["']?feedback-report/i.test(contentType) && !reportPart) return null;
+
+  // The machine-readable part is a small "Field: value" block, same shape as
+  // a DSN's delivery-status part.
+  const reportText = reportPart ? reportPart.content.toString("utf8") : (parsed.text ?? "");
+  const feedbackType = reportText.match(/^Feedback-Type:\s*(\S+)/im)?.[1] ?? "";
+  if (!COMPLAINT_FEEDBACK_TYPES.test(feedbackType)) return null;
+
+  const recipientMatch =
+    reportText.match(/^Original-Rcpt-To:\s*(\S+)/im) ??
+    reportText.match(/^Removal-Recipient:\s*(\S+)/im);
+
+  return {
+    type: "complaint",
+    recipientEmail: recipientMatch?.[1]?.replace(/[<>]/g, "") ?? null,
+    messageId: await originalMessageId(parsed, raw),
+  };
+}
+
+/**
+ * Parses a raw fetched message and extracts bounce/complaint info, or null if
+ * it is neither a DSN (RFC 3464) nor an actionable ARF report (RFC 5965) --
+ * the common case for everything else sitting in a shared/noisy mailbox,
+ * discarded cheaply without being written anywhere. See
  * docs/plan/mailbox_bounce_scanning.md §2 for the two-tier correlation
  * strategy this feeds into (Message-ID match, then address fallback).
  */
-async function parseBounce(raw: Buffer): Promise<ParsedBounce | null> {
+export async function parseReport(raw: Buffer): Promise<ParsedReport | null> {
   const parsed = await simpleParser(raw);
   const contentType = headerValue(parsed.headers, "content-type");
+
+  const arf = await parseArf(parsed, contentType, raw);
+  if (arf) return arf;
+
   const looksLikeDsn =
     /multipart\/report/i.test(contentType) ||
     parsed.attachments.some((a) => /delivery-status/i.test(a.contentType));
@@ -154,12 +231,13 @@ async function parseBounce(raw: Buffer): Promise<ParsedBounce | null> {
   return { type: isHard ? "hard" : "soft", recipientEmail, messageId };
 }
 
-/** Resolves a parsed bounce to a subscriber/campaign and records it via the
- * existing recordBounce() -- Message-ID match first (exact subscriber +
- * campaign), recipient-address fallback second (subscriber only,
- * campaign_id: null). No match at all: silently dropped, same as a
- * non-DSN message. */
-async function resolveAndRecordBounce(db: DB, parsed: ParsedBounce): Promise<void> {
+/** Resolves a parsed bounce or complaint to a subscriber/campaign and records
+ * it via the existing recordBounce() -- Message-ID match first (exact
+ * subscriber + campaign), recipient-address fallback second (subscriber only,
+ * campaign_id: null). No match at all: silently dropped, same as an
+ * unrecognized message. A complaint blocklists on the first occurrence
+ * (COMPLAINT_THRESHOLD in services/bounces.ts). */
+async function resolveAndRecordReport(db: DB, parsed: ParsedReport): Promise<void> {
   if (parsed.messageId) {
     const row = await db
       .selectFrom("campaign_emails")
@@ -219,8 +297,9 @@ async function recordScanError(db: DB, connectionId: number, err: unknown): Prom
 }
 
 /** Scans one connection's bounce mailbox for new messages since the last
- * run, classifies any that look like DSNs, and records matches via
- * recordBounce(). Never marks messages \Seen, moves, or deletes anything --
+ * run, classifies any that look like a DSN (RFC 3464) or an ARF feedback
+ * report (RFC 5965), and records matches via recordBounce().
+ * Never marks messages \Seen, moves, or deletes anything --
  * the persisted UID cursor (connections.bounce_last_uid/uidvalidity) is the
  * only processed/unprocessed state this feature owns. See
  * docs/plan/mailbox_bounce_scanning.md §5 for the full algorithm this
@@ -289,8 +368,8 @@ export async function scanConnectionForBounces(db: DB, connectionId: number): Pr
         for await (const msg of client.fetch(chunk, { source: true }, { uid: true })) {
           if (msg.source) {
             try {
-              const parsed = await parseBounce(msg.source);
-              if (parsed) await resolveAndRecordBounce(db, parsed);
+              const parsed = await parseReport(msg.source);
+              if (parsed) await resolveAndRecordReport(db, parsed);
             } catch {
               // One malformed message shouldn't abort the whole scan.
             }

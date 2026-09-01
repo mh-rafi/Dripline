@@ -230,9 +230,10 @@ have).
 
 ### Bounce mailbox scanning
 
-Per connection, optional IMAP mailbox scanning for bounces (a second,
-independent ingestion path alongside the webhook-based `POST /bounces` --
-see `docs/plan/mailbox_bounce_scanning.md`). `connections.bounce_config`:
+Per connection, optional IMAP mailbox scanning for bounces **and spam
+complaints** (a second, independent ingestion path alongside the
+webhook-based `POST /bounces` -- see `docs/plan/mailbox_bounce_scanning.md`).
+`connections.bounce_config`:
 
 ```ts
 {
@@ -251,6 +252,21 @@ see `docs/plan/mailbox_bounce_scanning.md`). `connections.bounce_config`:
   max_messages_per_scan: number; // default 200
 }
 ```
+
+The scan recognizes two report formats in that mailbox: DSNs (RFC 3464),
+recorded as `hard`/`soft`, and ARF feedback reports (RFC 5965) from a
+provider's feedback loop, recorded as `complaint` -- which blocklists the
+contact on the first occurrence. Both correlate back to the exact subscriber
+and campaign through `campaign_emails.message_id`, so no extra outbound header
+is involved. Only `Feedback-Type: abuse` and `fraud` are actioned; `not-spam`
+is ignored on purpose (it is a positive signal, not a complaint).
+
+Receiving complaints needs no extra Dripline config -- FBL reports arrive in
+the same mailbox as bounces. It does need a one-time enrollment with each
+provider's feedback loop (Microsoft SNDS/JMRP, Yahoo/AOL via Validity),
+pointed at an address delivering into that mailbox. Gmail runs no per-message
+feedback loop, so Gmail complaints are visible only in aggregate through
+Google Postmaster Tools.
 
 `bounce_config.password` is masked the same way `config.password` is.
 Runs every 5 minutes for every `enabled` connection with `bounce_config.

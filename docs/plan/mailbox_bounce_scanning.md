@@ -447,3 +447,62 @@ false`) on an `smtp` connection, outgoing sends through it carry an
       to reflect this landing (the hardening doc's bounce bullet currently
       says mailbox-scan detection is "still open" — update it once this is
       built, not before).
+
+## Update: ARF feedback-loop (spam complaint) parsing (2026-09-01)
+
+**Problem:** an SMTP connection has no complaint webhook the way SES/SNS
+does, so "this person marked us as spam" never reached Dripline. Mailbox
+providers do report it — as an **email**, in ARF (RFC 5965), sent by their
+feedback loop to whatever address the sender registered.
+
+The obvious-looking design (an inbound-parse service like Mailgun/Cloudflare
+converting the mail to JSON and POSTing a new public endpoint) would have
+duplicated machinery this scanner already has: IMAP fetch, MIME parse,
+Message-ID correlation, and a `complaint` bounce type that already blocklists
+on the first occurrence. So the feature is a parser extension, not a pipeline.
+
+Worse, the previous parser did not merely miss these — it **misclassified**
+them. An ARF report is also a `multipart/report`, so it passed the
+`looksLikeDsn` check, found no `Status:` line, and fell through to the
+"soft bounce" default. A complaint silently became a soft bounce.
+
+**Built:**
+
+- `parseArf()` recognizes `report-type=feedback-report` (or a
+  `message/feedback-report` part) and is checked **before** the DSN branch,
+  for exactly the misclassification reason above.
+- Only `Feedback-Type: abuse` and `fraud` are actioned. `not-spam` is
+  deliberately ignored — it is a _positive_ signal some providers send, and
+  treating it as a complaint would blocklist someone for rescuing our mail
+  from their junk folder. `opt-out` and `virus` are ignored too (an
+  unsubscribe request has its own List-Unsubscribe path).
+- Correlation reuses §2 unchanged. ARF carries the reported message's headers
+  as a `message/rfc822` or `text/rfc822-headers` part, so the Message-ID
+  already stored in `campaign_emails.message_id` is right there — no custom
+  `X-` tracking header was needed. The raw-source fallback skips the report's
+  own outer Message-ID.
+- Everything downstream is untouched: `resolveAndRecordReport()` →
+  `recordBounce({ type: "complaint" })` → blocklist at
+  `COMPLAINT_THRESHOLD` (1), attributed to the exact campaign.
+
+**Setup:** nothing new in Dripline. FBL reports land in the mailbox
+`bounce_config` already points at, and the same 5-minute scan picks them up.
+The work is external and one-time: enroll the sending domain/IPs with each
+provider's feedback loop (Microsoft SNDS/JMRP, Yahoo/AOL via Validity) and
+give them an address delivering into that mailbox.
+
+**Known limit, worth stating plainly:** Gmail does not operate a per-message
+feedback loop — only aggregate reporting via Google Postmaster Tools. So this
+covers Outlook and Yahoo and never the largest mailbox provider. One-click
+List-Unsubscribe (RFC 8058, already shipped) remains the actual complaint
+_reducer_; this is detection for the subset that reports.
+
+**Status: verified.** `parseReport()` was exercised against Yahoo-style
+(`message/rfc822`) and Microsoft-style (`text/rfc822-headers`) ARF fixtures:
+both yield `complaint` with the _original_ Message-ID and the complaining
+recipient; `not-spam` and `opt-out` yield null; a DSN still parses as a hard
+bounce with its Message-ID intact; ordinary mail is still ignored. The
+downstream chain was verified against real Postgres in a rolled-back
+transaction: one complaint blocklists the contact, unsubscribes their
+memberships, and records `type: "complaint", source: "mailbox-scan"`.
+Not exercised: a live IMAP fetch of a real provider FBL message.
