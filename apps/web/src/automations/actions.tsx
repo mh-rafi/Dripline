@@ -3,6 +3,7 @@ import { Clock, ListMinus, ListPlus, MailPlus } from "lucide-react";
 import { api } from "../lib/api.js";
 import { useEmailHistory } from "../hooks/useEmailHistory.js";
 import EmailHistoryInput from "../components/EmailHistoryInput.js";
+import PreviewModal from "../components/PreviewModal.js";
 import ContentTypeEditor, {
   type ContentType,
 } from "../components/content-editor/ContentTypeEditor.js";
@@ -204,15 +205,19 @@ function SendCustomEmailSettings({ config, onChange, automation }: SettingsProps
         }
       />
 
-      <TestSendRow automationId={automation.id} config={config} />
+      <PreviewAndTestRow automationId={automation.id} config={config} />
     </div>
   );
 }
 
-/** Test-sends this step's current, unsaved config -- the automation analogue of
- * the campaign page's "Send test", down to sharing its address history. */
-function TestSendRow({ automationId, config }: { automationId: number; config: NodeConfig }) {
+/** Previews and test-sends this step's current, unsaved config -- the
+ * automation analogue of the campaign page's "Preview" and "Send test", down to
+ * sharing the same modal and the same saved address history. */
+function PreviewAndTestRow({ automationId, config }: { automationId: number; config: NodeConfig }) {
   const { emails, addEmail, removeEmail } = useEmailHistory();
+  const [preview, setPreview] = useState<{ subject: string; html: string } | null>(null);
+  const [previewing, setPreviewing] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
   const [email, setEmail] = useState(() => emails[0] ?? "");
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; error: string | null } | null>(null);
@@ -236,8 +241,32 @@ function TestSendRow({ automationId, config }: { automationId: number; config: N
     }
   }
 
+  async function showPreview() {
+    setPreviewing(true);
+    setPreviewError(null);
+    try {
+      setPreview(
+        await api.post<{ subject: string; html: string }>(
+          `/automations/${automationId}/preview`,
+          config,
+        ),
+      );
+    } catch (err) {
+      setPreviewError(err instanceof Error ? err.message : "preview failed");
+    } finally {
+      setPreviewing(false);
+    }
+  }
+
   return (
     <div className="space-y-2">
+      <div>
+        <Button type="button" variant="outline" disabled={previewing} onClick={showPreview}>
+          {previewing ? "Loading preview…" : "Preview"}
+        </Button>
+        {previewError && <p className="text-destructive mt-1 text-sm">{previewError}</p>}
+      </div>
+
       <FormLabel>Send test email</FormLabel>
       <div className="flex items-center gap-2">
         <EmailHistoryInput
@@ -259,9 +288,17 @@ function TestSendRow({ automationId, config }: { automationId: number; config: N
         </p>
       )}
       <p className="text-muted-foreground text-xs">
-        Sends this step as configured right now -- it doesn't save the automation, enrol anyone, or
-        advance a contact.
+        Both use this step as configured right now -- neither saves the automation, enrols anyone,
+        or advances a contact.
       </p>
+
+      {preview && (
+        <PreviewModal
+          subject={preview.subject}
+          html={preview.html}
+          onClose={() => setPreview(null)}
+        />
+      )}
     </div>
   );
 }

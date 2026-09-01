@@ -6,9 +6,14 @@ import { BadRequestError, NotFoundError } from "../lib/errors.js";
 import { AutomationGraph, orderedNodes } from "../lib/automationGraph.js";
 import { getTrigger, TRIGGERS } from "../automations/triggers.js";
 import { ACTIONS, getAction } from "../automations/actions.js";
-import { SendCustomEmailConfig, renderAutomationEmail } from "../automations/email.js";
+import {
+  SendCustomEmailConfig,
+  SendCustomEmailPreview,
+  renderAutomationEmail,
+} from "../automations/email.js";
 import { getExplicitConnectionChain, sendWithChain } from "../services/connections.js";
 import { syntheticSubscriber } from "../services/campaigns.js";
+import { plainTextPreviewHtml } from "../services/mailer.js";
 import { enroll, fireEvent, getAutomationOrThrow, recordEvent } from "../services/automations.js";
 import { getAutomationUnsubscribeCounts } from "../services/unsubscribes.js";
 
@@ -387,6 +392,34 @@ export default async function automationRoutes(
         });
 
         return { ok: result.ok, error: result.error };
+      },
+    );
+
+    /** Renders one email step for the preview pane. Same renderer the live
+     * action uses, so the template wrapper, merge fields and unsubscribe link
+     * are the real ones -- but no connection is required, since previewing is
+     * something you do while the step is still half-written. */
+    adminApp.post(
+      "/api/v1/automations/:id/preview",
+      { preHandler: adminApp.requirePermission("automations:get") },
+      async (req) => {
+        const { id } = IdParam.parse(req.params);
+        const content = SendCustomEmailPreview.parse(req.body);
+        const automation = await getAutomationOrThrow(db, id);
+
+        const rendered = await renderAutomationEmail(
+          db,
+          config,
+          automation,
+          syntheticSubscriber("preview@example.com", "Preview Subscriber"),
+          content,
+        );
+        return {
+          subject: rendered.subject,
+          // A plain-text step has no HTML part to show, so the pane gets the
+          // text one wrapped for display -- same as previewCampaign.
+          html: rendered.html || plainTextPreviewHtml(rendered.text),
+        };
       },
     );
   });

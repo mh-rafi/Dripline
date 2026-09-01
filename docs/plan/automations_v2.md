@@ -207,9 +207,16 @@ Decisions made while building it:
   out into `automations/email.ts` (`renderAutomationEmail`, plus the config
   schema both the action and the route validate against) -- the action and the
   test endpoint call the same function, which is what makes a test faithful to
-  what the live automation sends. The web side genuinely is reused:
-  `EmailHistoryInput` and `useEmailHistory` are shared with the campaign page,
-  so both features draw on one address history.
+  what the live automation sends. `POST /automations/:id/preview` rides the same
+  renderer. The web side genuinely is reused: `EmailHistoryInput`,
+  `useEmailHistory` and `PreviewModal` are all shared with the campaign page, so
+  the two features draw on one address history and one preview pane.
+- **Preview validates a looser schema than a send.** The config schema is split
+  into `SendCustomEmailContent` (what the email says) and the delivery fields
+  layered on top, because you preview a step that has no connection picked yet
+  and often no subject typed yet -- `SendCustomEmailPreview` defaults both to
+  empty rather than refusing to render. Only the send paths require the full
+  `SendCustomEmailConfig`.
 - **The visual (GrapesJS) editing mode is left out of automation emails** -- it needs far
   more room than a 520px sidebar. `ContentTypeEditor` grew an `allowedTypes` prop for this.
 

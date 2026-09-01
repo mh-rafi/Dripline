@@ -7,7 +7,10 @@ import { htmlToText } from "../lib/htmlToText.js";
 import { unsubscribeOneClickUrl, unsubscribePageUrl, unsubscribeRef } from "../lib/trackingUrls.js";
 import type { Automation, Subscriber } from "./types.js";
 
-export const SendCustomEmailConfig = z.object({
+/** Just the fields that decide what the email *says* -- everything
+ * renderAutomationEmail needs, and nothing about how it is delivered. Split
+ * out so previewing works on a node that has no connection picked yet. */
+export const SendCustomEmailContent = z.object({
   subject: z.string().min(1),
   // Same model as campaigns: `body` holds the source for its content type
   // and is converted at send time (see jobs/campaignDispatch.ts).
@@ -19,6 +22,9 @@ export const SendCustomEmailConfig = z.object({
    * this existed, so adding the field can't change what an already-published
    * automation puts on the wire. */
   template_id: z.number().int().nullish(),
+});
+
+export const SendCustomEmailConfig = SendCustomEmailContent.extend({
   /** Required, and explicit: there is deliberately no implicit "any enabled
    * connection" fallback (see services/connections.ts), so a node without one
    * could be published and would then silently drop every email it tried to
@@ -27,6 +33,14 @@ export const SendCustomEmailConfig = z.object({
   fallback_connection_ids: z.array(z.number().int()).default([]),
 });
 
+/** Preview runs while the step is still being written, so unlike a send it
+ * accepts an empty subject or body rather than refusing to render. */
+export const SendCustomEmailPreview = SendCustomEmailContent.extend({
+  subject: z.string().default(""),
+  body: z.string().default(""),
+});
+
+export type SendCustomEmailContentSettings = z.infer<typeof SendCustomEmailContent>;
 export type SendCustomEmailSettings = z.infer<typeof SendCustomEmailConfig>;
 
 /** Automation emails aren't campaign-scoped, so their unsubscribe links are
@@ -60,7 +74,7 @@ export async function renderAutomationEmail(
   config: Config,
   automation: Automation,
   subscriber: Subscriber,
-  settings: SendCustomEmailSettings,
+  settings: SendCustomEmailContentSettings,
 ): Promise<RenderedAutomationEmail> {
   const unsub = unsubscribeUrls(config, automation, subscriber);
   const context = {
