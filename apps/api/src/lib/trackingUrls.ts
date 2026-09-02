@@ -47,6 +47,36 @@ export function openPixelUrl(
   return `${config.appUrl}/o/${c}/${s}/${sig}`;
 }
 
+/**
+ * Automation equivalents of the two above. `emailNodeId` is the
+ * automation_email_nodes row for one (automation, node) pair, so these stay
+ * the same length as the campaign links despite carrying more attribution.
+ *
+ * The signature prefixes ("al"/"ao") differ from the campaign ones ("l"/"o")
+ * on purpose: a campaign URL's signature must not verify when replayed against
+ * an automation endpoint with the same ids.
+ */
+export function automationClickUrl(
+  config: Config,
+  ids: { emailNodeId: number; subscriberId: number; linkId: number },
+): string {
+  const e = encodeId(ids.emailNodeId);
+  const s = encodeId(ids.subscriberId);
+  const k = encodeId(ids.linkId);
+  const sig = sign(config.trackingSecret, ["al", e, s, k], SIG_LEN);
+  return `${config.appUrl}/al/${e}/${s}/${k}/${sig}`;
+}
+
+export function automationOpenPixelUrl(
+  config: Config,
+  ids: { emailNodeId: number; subscriberId: number },
+): string {
+  const e = encodeId(ids.emailNodeId);
+  const s = encodeId(ids.subscriberId);
+  const sig = sign(config.trackingSecret, ["ao", e, s], SIG_LEN);
+  return `${config.appUrl}/ao/${e}/${s}/${sig}`;
+}
+
 /** Campaign and automation unsubscribes share one page and one endpoint, so
  * the ref carries which kind it is. The uuid form had to settle that with a
  * lookup in both tables (resolveUnsubscribeOrigin); this doesn't. */

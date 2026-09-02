@@ -8,6 +8,9 @@ export interface SettingsProps {
   config: NodeConfig;
   onChange: (config: NodeConfig) => void;
   automation: Automation;
+  /** The graph node being edited. Absent for the trigger panel, which is the
+   * automation itself rather than a node. */
+  nodeId?: string;
 }
 
 export interface SummaryContext {
@@ -49,6 +52,11 @@ export function listNames(listIds: number[], lists: List[]): string {
 export function stringOf(config: NodeConfig, key: string, fallback = ""): string {
   const value = config[key];
   return typeof value === "string" ? value : fallback;
+}
+
+export function boolOf(config: NodeConfig, key: string, fallback = false): boolean {
+  const value = config[key];
+  return typeof value === "boolean" ? value : fallback;
 }
 
 export function numberOf(config: NodeConfig, key: string, fallback: number): number {

@@ -2,7 +2,12 @@ import { z } from "zod";
 import { defineAction, type RegisteredAction } from "./types.js";
 import { addToList, removeFromList } from "../services/subscribers.js";
 import { getExplicitConnectionChain, sendWithChain } from "../services/connections.js";
-import { SendCustomEmailConfig, renderAutomationEmail } from "./email.js";
+import {
+  SendCustomEmailConfig,
+  recordEmailSend,
+  renderAutomationEmail,
+  resolveEmailNodeId,
+} from "./email.js";
 
 const UNIT_SECONDS = { minutes: 60, hours: 3600, days: 86400 } as const;
 
@@ -64,8 +69,11 @@ const sendCustomEmail = defineAction({
   description: "Write and send a one-off email to the contact from this automation.",
   group: "email",
   configSchema: SendCustomEmailConfig,
-  execute: async ({ db, config, automation, subscriber, settings }) => {
-    const rendered = await renderAutomationEmail(db, config, automation, subscriber, settings);
+  execute: async ({ db, config, automation, node, subscriber, settings }) => {
+    const emailNodeId = await resolveEmailNodeId(db, automation.id, node.id);
+    const rendered = await renderAutomationEmail(db, config, automation, subscriber, settings, {
+      emailNodeId,
+    });
 
     const chain = await getExplicitConnectionChain(
       db,
@@ -79,6 +87,8 @@ const sendCustomEmail = defineAction({
       text: rendered.text,
       unsubscribeUrl: rendered.unsubscribeUrl,
     });
+
+    if (result.ok) await recordEmailSend(db, emailNodeId, subscriber.id);
 
     if (!result.ok && result.error === "rate_limited") {
       // Not a failure -- come back to this same node shortly rather than

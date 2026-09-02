@@ -217,6 +217,38 @@ Decisions made while building it:
   and often no subject typed yet -- `SendCustomEmailPreview` defaults both to
   empty rather than refusing to render. Only the send paths require the full
   `SendCustomEmailConfig`.
+- **Open/click tracking is per node, and the node is interned.** Attribution had
+  to be per step -- "clicks on this automation" across a five-email drip is not
+  a number anyone can act on. The existing tables couldn't carry it
+  (`campaign_views.campaign_id` is `NOT NULL REFERENCES campaigns(id)`, and
+  `link_clicks` is decoded from a campaign-encoded URL), so
+  `automation_views` / `automation_link_clicks` are their own rows. Both point
+  at `automation_email_nodes`, which interns an (automation, node) pair the way
+  `links` interns a URL: node ids are arbitrary strings, and putting one in the
+  path would blow the ~120-character budget from
+  [deliverability.md](deliverability.md). The URL carries one base62 id
+  instead, so `/al/` and `/ao/` are the same length as `/l/` and `/o/`. Their
+  signature prefixes differ (`al`/`ao` vs `l`/`o`) so a campaign URL cannot be
+  replayed against an automation endpoint with the same ids. The shared `links`
+  table is reused as-is -- URL interning was never campaign-scoped.
+- **`automation_email_sends` exists to be a denominator.** Without it an open
+  count is a number with nothing to be a rate of; enrollments can't stand in,
+  since `reentry_mode: "multiple"` sends the same node to the same contact more
+  than once and each pass is a real email. Logged even when both toggles are
+  off, so switching tracking on later still has a "sent" figure beside it.
+- **`track_opens`/`track_clicks` default to false in the schema, true in the
+  builder.** Defaulting the schema to true would start rewriting links and
+  adding a pixel to what already-published automations put on the wire; the
+  builder's `defaultConfig` turns both on for _new_ nodes, so the expected
+  default applies only where it is safe. Same shape as the `template_id`
+  decision above.
+- **Previews and test sends are never tracked.** `renderAutomationEmail` only
+  emits a pixel or rewrites links when the caller passes `tracking`, and only
+  the live action does. Otherwise an author previewing their own draft would
+  register as an open against the node, and every test send would inflate its
+  stats. (Campaign test sends do not make this distinction -- they render with
+  the campaign's real tracking flags. Left alone here as out of scope, but it
+  is the same bug.)
 - **The visual (GrapesJS) editing mode is left out of automation emails** -- it needs far
   more room than a 520px sidebar. `ContentTypeEditor` grew an `allowedTypes` prop for this.
 
@@ -226,8 +258,9 @@ Decisions made while building it:
   existing campaign**.
 - Per-node run logging (`automation_node_runs`) → the Stats toggle on the canvas showing
   per-block counts, plus a per-enrollment activity trail.
-- Open/click tracking for automation emails (today's tracking tables are campaign-scoped,
-  so this needs its own event rows).
+- ~~Open/click tracking for automation emails~~ -- **done**, per node. See the decision
+  below; what remains here is the general `automation_node_runs` log for every node type,
+  which the canvas Stats overlay needs.
 
 ### Phase 3 — conditional branching
 

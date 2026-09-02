@@ -289,6 +289,39 @@ export interface LinksTable {
   created_at: Generated<Timestamp>;
 }
 
+/** Interns an (automation, graph node) pair so tracking URLs can carry one
+ * small integer instead of an arbitrary-length node id -- see the migration. */
+export interface AutomationEmailNodesTable {
+  id: Generated<number>;
+  automation_id: number;
+  node_id: string;
+  created_at: Generated<Timestamp>;
+}
+
+/** One row per automation email handed to a connection: the denominator for
+ * this node's open and click rates. */
+export interface AutomationEmailSendsTable {
+  id: Generated<string>;
+  email_node_id: number;
+  subscriber_id: number | null;
+  created_at: Generated<Timestamp>;
+}
+
+export interface AutomationViewsTable {
+  id: Generated<string>;
+  email_node_id: number;
+  subscriber_id: number | null;
+  created_at: Generated<Timestamp>;
+}
+
+export interface AutomationLinkClicksTable {
+  id: Generated<string>;
+  email_node_id: number;
+  link_id: number;
+  subscriber_id: number | null;
+  created_at: Generated<Timestamp>;
+}
+
 export interface LinkClicksTable {
   id: Generated<string>;
   link_id: number;
@@ -402,6 +435,10 @@ export interface Database {
   campaign_unsubscribes: CampaignUnsubscribesTable;
   links: LinksTable;
   link_clicks: LinkClicksTable;
+  automation_email_nodes: AutomationEmailNodesTable;
+  automation_email_sends: AutomationEmailSendsTable;
+  automation_views: AutomationViewsTable;
+  automation_link_clicks: AutomationLinkClicksTable;
   automations: AutomationsTable;
   automation_enrollments: AutomationEnrollmentsTable;
   automation_events: AutomationEventsTable;

@@ -238,7 +238,7 @@ function NodePanel({
 
       <div className="border-t pt-5">
         {Settings ? (
-          <Settings config={config} onChange={setConfig} automation={automation} />
+          <Settings config={config} onChange={setConfig} automation={automation} nodeId={node.id} />
         ) : (
           <Alert>
             <AlertDescription>

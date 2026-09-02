@@ -44,6 +44,15 @@ const ShortClickParams = z.object({
 
 const ShortOpenParams = ShortClickParams.omit({ k: true });
 
+const AutomationClickParams = z.object({
+  e: z.string().min(1).max(9),
+  s: z.string().min(1).max(9),
+  k: z.string().min(1).max(9),
+  sig: z.string().length(16),
+});
+
+const AutomationOpenParams = AutomationClickParams.omit({ k: true });
+
 const ShortUnsubParams = z.object({
   ref: z.string().min(2).max(10),
   s: z.string().min(1).max(9),
@@ -117,6 +126,33 @@ async function recordClick(
   }
 }
 
+async function recordAutomationClick(
+  db: DB,
+  click: { linkId: number; emailNodeId: number; subscriberId: number; url: string },
+): Promise<void> {
+  const { linkId, emailNodeId, subscriberId, url } = click;
+  try {
+    await db
+      .insertInto("automation_link_clicks")
+      .values({
+        email_node_id: emailNodeId,
+        link_id: linkId,
+        subscriber_id: subscriberId > 0 ? subscriberId : null,
+      })
+      .execute();
+    if (subscriberId > 0) {
+      await recordEvent(db, {
+        source: "link_clicked",
+        eventKey: url,
+        subscriberId,
+        payload: { url, automationEmailNodeId: emailNodeId },
+      });
+    }
+  } catch (err) {
+    console.error(`automation click tracking failed for link ${linkId}: ${String(err)}`);
+  }
+}
+
 export default async function trackingRoutes(
   app: FastifyInstance,
   opts: { db: DB; config: Config },
@@ -178,6 +214,61 @@ export default async function trackingRoutes(
           .execute();
       } catch (err) {
         console.error(`open tracking failed for campaign ${campaignId}: ${String(err)}`);
+      }
+    }
+    return reply.send(TRANSPARENT_GIF);
+  });
+
+  /** Automation click. `e` is an automation_email_nodes id, so a click is
+   * attributed to the exact step that sent the mail rather than to the whole
+   * automation. Mirrors /l/ otherwise, including redirecting on a bad
+   * signature. */
+  app.get("/al/:e/:s/:k/:sig", async (req, reply) => {
+    const { e, s, k, sig } = AutomationClickParams.parse(req.params);
+    const linkId = decodeId(k);
+    if (linkId === null) return reply.code(404).send({ error: "not found" });
+
+    const link = await db
+      .selectFrom("links")
+      .select("url")
+      .where("id", "=", linkId)
+      .executeTakeFirst();
+    if (!link) return reply.code(404).send({ error: "not found" });
+
+    const emailNodeId = decodeId(e) ?? 0;
+    if (emailNodeId > 0 && verifyTrackingSig(config, ["al", e, s, k], sig)) {
+      await recordAutomationClick(db, {
+        linkId,
+        emailNodeId,
+        subscriberId: decodeId(s) ?? 0,
+        url: link.url,
+      });
+    }
+    return reply.redirect(link.url);
+  });
+
+  /** Automation open pixel. */
+  app.get("/ao/:e/:s/:sig", async (req, reply) => {
+    const { e, s, sig } = AutomationOpenParams.parse(req.params);
+
+    reply.header("content-type", "image/gif");
+    if (!verifyTrackingSig(config, ["ao", e, s], sig)) {
+      return reply.send(TRANSPARENT_GIF);
+    }
+
+    const emailNodeId = decodeId(e) ?? 0;
+    const subscriberId = decodeId(s) ?? 0;
+    if (emailNodeId > 0) {
+      try {
+        await db
+          .insertInto("automation_views")
+          .values({
+            email_node_id: emailNodeId,
+            subscriber_id: subscriberId > 0 ? subscriberId : null,
+          })
+          .execute();
+      } catch (err) {
+        console.error(`open tracking failed for automation node ${emailNodeId}: ${String(err)}`);
       }
     }
     return reply.send(TRANSPARENT_GIF);

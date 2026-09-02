@@ -16,6 +16,7 @@ import { syntheticSubscriber } from "../services/campaigns.js";
 import { plainTextPreviewHtml } from "../services/mailer.js";
 import { enroll, fireEvent, getAutomationOrThrow, recordEvent } from "../services/automations.js";
 import { getAutomationUnsubscribeCounts } from "../services/unsubscribes.js";
+import { getAutomationEmailStats } from "../services/automationEmailStats.js";
 
 const IdParam = z.object({ id: z.coerce.number() });
 
@@ -331,7 +332,11 @@ export default async function automationRoutes(
       { preHandler: adminApp.requirePermission("automations:get") },
       async (req) => {
         const { id } = IdParam.parse(req.params);
-        return getAutomationUnsubscribeCounts(db, id);
+        const [unsubscribes, nodes] = await Promise.all([
+          getAutomationUnsubscribeCounts(db, id),
+          getAutomationEmailStats(db, id),
+        ]);
+        return { ...unsubscribes, nodes };
       },
     );
 

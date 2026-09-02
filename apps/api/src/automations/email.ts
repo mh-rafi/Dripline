@@ -1,10 +1,17 @@
 import { z } from "zod";
 import type { DB } from "../db/kysely.js";
 import type { Config } from "../config.js";
-import { renderTemplate } from "../lib/template.js";
+import { appendOpenPixel, extractLinks, renderTemplate, rewriteLinks } from "../lib/template.js";
 import { markdownToHtml } from "../lib/markdown.js";
 import { htmlToText } from "../lib/htmlToText.js";
-import { unsubscribeOneClickUrl, unsubscribePageUrl, unsubscribeRef } from "../lib/trackingUrls.js";
+import {
+  automationClickUrl,
+  automationOpenPixelUrl,
+  unsubscribeOneClickUrl,
+  unsubscribePageUrl,
+  unsubscribeRef,
+} from "../lib/trackingUrls.js";
+import { resolveLinkIds } from "../services/mailer.js";
 import type { Automation, Subscriber } from "./types.js";
 
 /** Just the fields that decide what the email *says* -- everything
@@ -22,6 +29,12 @@ export const SendCustomEmailContent = z.object({
    * this existed, so adding the field can't change what an already-published
    * automation puts on the wire. */
   template_id: z.number().int().nullish(),
+  /** Default false, not true: turning these on for nodes that predate the
+   * feature would start rewriting links and adding a pixel to what an already
+   * published automation puts on the wire. The builder sets both true on a
+   * *new* node instead, so the expected default applies where it is safe. */
+  track_opens: z.boolean().default(false),
+  track_clicks: z.boolean().default(false),
 });
 
 export const SendCustomEmailConfig = SendCustomEmailContent.extend({
@@ -66,8 +79,13 @@ export interface RenderedAutomationEmail {
 
 /**
  * Renders one automation email for one contact. Shared by the
- * `send_custom_email` action and the test-send endpoint, so what a test puts
- * in your inbox is byte-for-byte what the live automation will send.
+ * `send_custom_email` action, the test-send endpoint and the preview, so what
+ * a test puts in your inbox is what the live automation will send.
+ *
+ * `tracking` is what separates them: only a real send passes it, so a test or
+ * a preview never carries a pixel or rewritten links. Otherwise the author
+ * previewing their own draft would register as an open against the node, and
+ * every test send would inflate its stats.
  */
 export async function renderAutomationEmail(
   db: DB,
@@ -75,6 +93,7 @@ export async function renderAutomationEmail(
   automation: Automation,
   subscriber: Subscriber,
   settings: SendCustomEmailContentSettings,
+  tracking?: { emailNodeId: number } | null,
 ): Promise<RenderedAutomationEmail> {
   const unsub = unsubscribeUrls(config, automation, subscriber);
   const context = {
@@ -115,7 +134,40 @@ export async function renderAutomationEmail(
       : null;
     const wrapped = template ? template.body.replace("{{ Body }}", source) : source;
     html = renderTemplate(wrapped, context);
+
+    if (tracking && settings.track_clicks) {
+      // The unsubscribe link must never be wrapped in click-tracking, or
+      // clicking it would log a spurious click (and could fire a link_clicked
+      // trigger) before redirecting -- same carve-out as renderCampaignEmail.
+      const urls = extractLinks(html).filter((url) => url !== unsub.page);
+      const linkIds = urls.length > 0 ? await resolveLinkIds(db, urls) : new Map<string, number>();
+      html = rewriteLinks(html, (url) => {
+        if (url === unsub.page) return undefined;
+        const linkId = linkIds.get(url);
+        return linkId === undefined
+          ? undefined
+          : automationClickUrl(config, {
+              emailNodeId: tracking.emailNodeId,
+              subscriberId: subscriber.id,
+              linkId,
+            });
+      });
+    }
+
+    // Derived from the link-rewritten HTML but before the pixel goes in: the
+    // text part should carry the same destinations a recipient would click,
+    // and none of the markup that only exists to be invisible.
     text = htmlToText(html);
+
+    if (tracking && settings.track_opens) {
+      html = appendOpenPixel(
+        html,
+        automationOpenPixelUrl(config, {
+          emailNodeId: tracking.emailNodeId,
+          subscriberId: subscriber.id,
+        }),
+      );
+    }
   }
 
   return {
@@ -124,4 +176,50 @@ export async function renderAutomationEmail(
     text,
     unsubscribeUrl: unsub.oneClick,
   };
+}
+
+/**
+ * The automation_email_nodes row for one (automation, node) pair, created on
+ * first use. Upsert rather than select-then-insert so two workers sending the
+ * same node concurrently can't race a duplicate past the unique index.
+ */
+export async function resolveEmailNodeId(
+  db: DB,
+  automationId: number,
+  nodeId: string,
+): Promise<number> {
+  const row = await db
+    .insertInto("automation_email_nodes")
+    .values({ automation_id: automationId, node_id: nodeId })
+    // A no-op update rather than doNothing: RETURNING skips the rows a
+    // doNothing conflict discards, and an existing pair's id is exactly what
+    // this needs back.
+    .onConflict((oc) =>
+      oc.columns(["automation_id", "node_id"]).doUpdateSet((eb) => ({
+        node_id: eb.ref("excluded.node_id"),
+      })),
+    )
+    .returning("id")
+    .executeTakeFirstOrThrow();
+  return row.id;
+}
+
+/** Logged for every email a node actually hands to a connection -- the
+ * denominator its open and click rates are computed against. Recorded even
+ * when both tracking toggles are off, so turning them on later still has a
+ * "sent" figure to sit beside. */
+export async function recordEmailSend(
+  db: DB,
+  emailNodeId: number,
+  subscriberId: number,
+): Promise<void> {
+  try {
+    await db
+      .insertInto("automation_email_sends")
+      .values({ email_node_id: emailNodeId, subscriber_id: subscriberId })
+      .execute();
+  } catch (err) {
+    // Telemetry must never fail a send that already went out.
+    console.error(`automation send logging failed for node ${emailNodeId}: ${String(err)}`);
+  }
 }

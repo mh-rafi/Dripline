@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Clock, ListMinus, ListPlus, MailPlus } from "lucide-react";
 import { api } from "../lib/api.js";
 import { useEmailHistory } from "../hooks/useEmailHistory.js";
@@ -10,6 +10,7 @@ import ContentTypeEditor, {
 import { ConnectionChainPicker, ListPicker } from "./fields.js";
 import { useAutomationData } from "./context.js";
 import {
+  boolOf,
   listIdsOf,
   listNames,
   numberOf,
@@ -23,6 +24,7 @@ import {
   Button,
   FormLabel,
   Input,
+  Switch,
   Select,
   SelectContent,
   SelectItem,
@@ -129,7 +131,7 @@ function numbersOf(config: NodeConfig, key: string): number[] {
   return value.filter((v): v is number => typeof v === "number");
 }
 
-function SendCustomEmailSettings({ config, onChange, automation }: SettingsProps) {
+function SendCustomEmailSettings({ config, onChange, automation, nodeId }: SettingsProps) {
   const { templates } = useAutomationData();
   const connectionId = typeof config.connection_id === "number" ? config.connection_id : undefined;
   const templateId = typeof config.template_id === "number" ? String(config.template_id) : "none";
@@ -193,6 +195,27 @@ function SendCustomEmailSettings({ config, onChange, automation }: SettingsProps
         </p>
       </div>
 
+      <div className="space-y-2">
+        <FormLabel>Tracking</FormLabel>
+        <div className="flex items-center gap-3">
+          <Switch
+            checked={boolOf(config, "track_opens")}
+            onCheckedChange={(v) => onChange({ ...config, track_opens: v === true })}
+          />
+          <span className="text-sm">Track opens</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <Switch
+            checked={boolOf(config, "track_clicks")}
+            onCheckedChange={(v) => onChange({ ...config, track_clicks: v === true })}
+          />
+          <span className="text-sm">Track clicks</span>
+        </div>
+        <p className="text-muted-foreground text-xs">
+          Counted per step, not per automation. Previews and test sends are never counted.
+        </p>
+      </div>
+
       <ConnectionChainPicker
         connectionId={connectionId}
         fallbackIds={numbersOf(config, "fallback_connection_ids")}
@@ -205,7 +228,87 @@ function SendCustomEmailSettings({ config, onChange, automation }: SettingsProps
         }
       />
 
+      {nodeId && <NodeStats automationId={automation.id} nodeId={nodeId} />}
+
       <PreviewAndTestRow automationId={automation.id} config={config} />
+    </div>
+  );
+}
+
+interface EmailNodeStats {
+  node_id: string;
+  sent: number;
+  opens: number;
+  unique_opens: number;
+  clicks: number;
+  unique_clicks: number;
+  links: { url: string; clicks: number; unique_clicks: number }[];
+}
+
+const nf = new Intl.NumberFormat();
+
+function pct(numerator: number, denominator: number): string {
+  if (denominator <= 0) return "0.00%";
+  return `${((numerator / denominator) * 100).toFixed(2)}%`;
+}
+
+/** Engagement for this one step. Rates use the same denominators the campaign
+ * report does -- unique recipients over emails sent -- so a drip step and a
+ * campaign are read the same way. */
+function NodeStats({ automationId, nodeId }: { automationId: number; nodeId: string }) {
+  const [stats, setStats] = useState<EmailNodeStats | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    api
+      .get<{ nodes?: EmailNodeStats[] }>(`/automations/${automationId}/analytics`)
+      .then((data) => {
+        if (live) setStats(data.nodes?.find((n) => n.node_id === nodeId) ?? null);
+      })
+      .catch(() => {
+        if (live) setStats(null);
+      });
+    return () => {
+      live = false;
+    };
+  }, [automationId, nodeId]);
+
+  // Nothing sent from this step yet -- an empty stats card would just be five
+  // zeros, so the block stays out of the panel entirely.
+  if (!stats || stats.sent === 0) return null;
+
+  const rows: [string, string][] = [
+    ["Sent", nf.format(stats.sent)],
+    [`Opened (${nf.format(stats.unique_opens)})`, pct(stats.unique_opens, stats.sent)],
+    [`Clicked (${nf.format(stats.unique_clicks)})`, pct(stats.unique_clicks, stats.sent)],
+  ];
+
+  return (
+    <div className="space-y-2">
+      <FormLabel>This step&apos;s performance</FormLabel>
+      <div className="border-border rounded-md border px-3 py-1">
+        {rows.map(([label, value]) => (
+          <div
+            key={label}
+            className="border-border flex items-center justify-between border-b py-2 text-sm last:border-b-0"
+          >
+            <span className="text-muted-foreground">{label}</span>
+            <span className="font-medium tabular-nums">{value}</span>
+          </div>
+        ))}
+      </div>
+      {stats.links.length > 0 && (
+        <ul className="space-y-1 text-xs">
+          {stats.links.map((link) => (
+            <li key={link.url} className="flex items-center gap-2">
+              <span className="text-muted-foreground min-w-0 flex-1 truncate" title={link.url}>
+                {link.url}
+              </span>
+              <span className="shrink-0 tabular-nums">{nf.format(link.unique_clicks)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
@@ -350,6 +453,8 @@ export const ACTIONS: NodeUi[] = [
       body: "",
       content_type: "richtext",
       template_id: null,
+      track_opens: true,
+      track_clicks: true,
       fallback_connection_ids: [],
     },
     summary: (config) => stringOf(config, "subject") || "No subject yet",
