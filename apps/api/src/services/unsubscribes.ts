@@ -39,6 +39,7 @@ export async function recordUnsubscribe(
     subscriberId: number;
     campaignId?: number | null;
     automationId?: number | null;
+    automationEmailNodeId?: number | null;
     source: UnsubscribeSource;
     listIds: number[];
   },
@@ -50,6 +51,7 @@ export async function recordUnsubscribe(
       subscriber_id: input.subscriberId,
       campaign_id: input.campaignId ?? null,
       automation_id: input.automationId ?? null,
+      automation_email_node_id: input.automationEmailNodeId ?? null,
       source: input.source,
       list_ids: input.listIds,
     })

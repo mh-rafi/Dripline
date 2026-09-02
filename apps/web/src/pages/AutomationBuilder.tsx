@@ -1,13 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Settings2, Users } from "lucide-react";
+import { ArrowLeft, BarChart3, Settings2 } from "lucide-react";
 import { api, ApiError } from "../lib/api.js";
-import type {
-  Automation,
-  AutomationEnrollment,
-  AutomationGraph,
-  AutomationNode,
-} from "../lib/types.js";
+import type { Automation, AutomationGraph, AutomationNode } from "../lib/types.js";
 import Badge from "../components/Badge.js";
 import Canvas from "../automations/Canvas.js";
 import BuilderSidebar, { type Panel } from "../automations/BuilderSidebar.js";
@@ -30,13 +25,6 @@ import {
   SelectValue,
   Skeleton,
   Switch,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-  TableEmptyState,
   toast,
 } from "../components/ui/index.js";
 
@@ -104,81 +92,11 @@ function SettingsDialog({
   );
 }
 
-function ContactsDialog({
-  automationId,
-  open,
-  onOpenChange,
-}: {
-  automationId: string;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
-  const [enrollments, setEnrollments] = useState<AutomationEnrollment[]>([]);
-
-  useEffect(() => {
-    if (!open) return;
-    api
-      .get<AutomationEnrollment[]>(`/automations/${automationId}/enrollments`)
-      .then(setEnrollments)
-      .catch(() => setEnrollments([]));
-  }, [automationId, open]);
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl">
-        <DialogHeader>
-          <DialogTitle>Contacts in this automation</DialogTitle>
-        </DialogHeader>
-        <div className="max-h-[60vh] overflow-y-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Contact</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Next run</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {enrollments.map((enrollment) => (
-                <TableRow key={enrollment.id}>
-                  <TableCell>
-                    <Link
-                      to={`/subscribers/${enrollment.subscriber_id}`}
-                      className="text-primary hover:underline"
-                    >
-                      {enrollment.email}
-                    </Link>
-                  </TableCell>
-                  <TableCell>
-                    <Badge status={enrollment.status} />
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {enrollment.next_run_at
-                      ? new Date(enrollment.next_run_at).toLocaleString()
-                      : "—"}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-          {enrollments.length === 0 && (
-            <TableEmptyState
-              title="Nobody here yet"
-              description="Contacts appear once the trigger fires for them."
-            />
-          )}
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 export default function AutomationBuilder() {
   const { id } = useParams();
   const [automation, setAutomation] = useState<Automation | null>(null);
   const [panel, setPanel] = useState<Panel>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [contactsOpen, setContactsOpen] = useState(false);
 
   useEffect(() => {
     api
@@ -286,8 +204,10 @@ export default function AutomationBuilder() {
           <Badge status={automation.status} />
 
           <div className="ml-auto flex items-center gap-3">
-            <Button variant="outline" size="sm" onClick={() => setContactsOpen(true)}>
-              <Users className="mr-1 h-4 w-4" /> Contacts
+            <Button variant="outline" size="sm" asChild>
+              <Link to={`/automations/${id}/reports`}>
+                <BarChart3 className="mr-1 h-4 w-4" /> Reports
+              </Link>
             </Button>
             <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)}>
               <Settings2 className="mr-1 h-4 w-4" /> Settings
@@ -336,11 +256,6 @@ export default function AutomationBuilder() {
               toast.error(errorMessage(err, "failed to save settings"));
             }
           }}
-        />
-        <ContactsDialog
-          automationId={String(id)}
-          open={contactsOpen}
-          onOpenChange={setContactsOpen}
         />
       </div>
     </AutomationDataProvider>

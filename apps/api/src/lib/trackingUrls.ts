@@ -20,7 +20,11 @@ import { sign, verify } from "./signing.js";
  * against the 120-character budget. */
 const SIG_LEN = 16;
 
-export type UnsubscribeKind = "campaign" | "automation";
+/** "automation_node" points at an automation_email_nodes row rather than an
+ * automation, so a departure can be attributed to the exact email that caused
+ * it. The older "automation" kind is still parsed: links carrying it are
+ * already sitting in inboxes. */
+export type UnsubscribeKind = "campaign" | "automation" | "automation_node";
 
 export function verifyTrackingSig(config: Config, parts: string[], signature: string): boolean {
   return verify(config.trackingSecret, parts, signature, SIG_LEN);
@@ -80,12 +84,18 @@ export function automationOpenPixelUrl(
 /** Campaign and automation unsubscribes share one page and one endpoint, so
  * the ref carries which kind it is. The uuid form had to settle that with a
  * lookup in both tables (resolveUnsubscribeOrigin); this doesn't. */
+const REF_PREFIX: Record<UnsubscribeKind, string> = {
+  campaign: "c",
+  automation: "a",
+  automation_node: "n",
+};
+
 export function unsubscribeRef(kind: UnsubscribeKind, id: number): string {
-  return (kind === "campaign" ? "c" : "a") + encodeId(id);
+  return REF_PREFIX[kind] + encodeId(id);
 }
 
 export function parseUnsubscribeRef(ref: string): { kind: UnsubscribeKind; id: number } | null {
-  const kind = ref[0] === "c" ? "campaign" : ref[0] === "a" ? "automation" : null;
+  const kind = (Object.keys(REF_PREFIX) as UnsubscribeKind[]).find((k) => REF_PREFIX[k] === ref[0]);
   if (!kind) return null;
   const id = decodeId(ref.slice(1));
   return id === null ? null : { kind, id };

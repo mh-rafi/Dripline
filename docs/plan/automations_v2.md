@@ -249,6 +249,23 @@ Decisions made while building it:
   stats. (Campaign test sends do not make this distinction -- they render with
   the campaign's real tracking flags. Left alone here as out of scope, but it
   is the same bug.)
+- **The funnel is counted from `automation_node_runs`, not from enrollments.** An
+  enrollment records where a contact is _now_, and a completed run records
+  nothing at all, so the position column cannot reconstruct "how many reached
+  step 3". The runner logs a row before each node executes -- before, so a node
+  that throws still counts as reached and the drop-off appears at the _next_
+  step -- with a unique index on `(enrollment_id, node_id)` and
+  ON CONFLICT DO NOTHING, so a `retry` (a send that hit a rate limit) counts one
+  contact, not several. `drop_pct` is measured against the entrance rather than
+  the previous step, so the funnel reads as a single descent.
+- **Cancel keeps the history; delete removes it.** Cancelling stops the run and
+  leaves the contact counted at every step they actually reached. Deleting the
+  enrollment cascades its node runs, so the funnel forgets them. Both are
+  offered on the report's contact table because they answer different
+  questions.
+- **The Contacts dialog was replaced by the report page.** It listed at most 200
+  enrollments with no pagination, no search and no entry date. `/automations/:id/reports`
+  supersedes it; the builder's topbar links there instead.
 - **The visual (GrapesJS) editing mode is left out of automation emails** -- it needs far
   more room than a 520px sidebar. `ContentTypeEditor` grew an `allowedTypes` prop for this.
 
@@ -256,8 +273,10 @@ Decisions made while building it:
 
 - Actions: **update contact property**, **outgoing webhook**, **send email from an
   existing campaign**.
-- Per-node run logging (`automation_node_runs`) → the Stats toggle on the canvas showing
-  per-block counts, plus a per-enrollment activity trail.
+- ~~Per-node run logging (`automation_node_runs`)~~ -- **done**, and it backs the report
+  page at `/automations/:id/reports` (funnel chart, per-step cards, per-email analytics,
+  paginated contact table). What remains here is surfacing the same counts as a Stats
+  toggle on the canvas itself, plus a per-enrollment activity trail.
 - ~~Open/click tracking for automation emails~~ -- **done**, per node. See the decision
   below; what remains here is the general `automation_node_runs` log for every node type,
   which the canvas Stats overlay needs.

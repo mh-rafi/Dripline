@@ -17,12 +17,25 @@ import { plainTextPreviewHtml } from "../services/mailer.js";
 import { enroll, fireEvent, getAutomationOrThrow, recordEvent } from "../services/automations.js";
 import { getAutomationUnsubscribeCounts } from "../services/unsubscribes.js";
 import { getAutomationEmailStats } from "../services/automationEmailStats.js";
+import { getAutomationReport } from "../services/automationReport.js";
 
 const IdParam = z.object({ id: z.coerce.number() });
+
+const EnrollmentParams = z.object({
+  id: z.coerce.number(),
+  enrollmentId: z.string().regex(/^\d+$/),
+});
 
 /** The node's own config, plus who to send to. Kept loose (passthrough of
  * the config fields) so it can be validated by the action's real schema
  * below rather than being duplicated here. */
+const EnrollmentsQuery = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  per_page: z.coerce.number().int().min(1).max(200).default(25),
+  status: z.enum(["all", "active", "completed", "cancelled"]).default("all"),
+  query: z.string().trim().default(""),
+});
+
 const TestEmail = z
   .object({ email: z.string().email(), name: z.string().optional() })
   .passthrough();
@@ -302,28 +315,106 @@ export default async function automationRoutes(
       },
     );
 
+    /** Paginated, searchable enrollment list -- what the report page's
+     * "Individual reporting" table reads. Returns the contact's position
+     * (`current_node_id`) rather than a rendered label: the page has the graph
+     * and can name the node itself, and a node renamed later then reads
+     * correctly for historical rows too. */
     adminApp.get(
       "/api/v1/automations/:id/enrollments",
       { preHandler: adminApp.requirePermission("automations:get") },
       async (req) => {
         const { id } = IdParam.parse(req.params);
-        return db
+        const { page, per_page, status, query } = EnrollmentsQuery.parse(req.query);
+        // Narrowed out of the "all" sentinel so Kysely sees only real statuses.
+        const statusFilter = status === "all" ? null : status;
+
+        const base = db
           .selectFrom("automation_enrollments")
           .innerJoin("subscribers", "subscribers.id", "automation_enrollments.subscriber_id")
-          .select([
-            "automation_enrollments.id",
-            "automation_enrollments.status",
-            "automation_enrollments.current_node_id",
-            "automation_enrollments.next_run_at",
-            "automation_enrollments.started_at",
-            "automation_enrollments.completed_at",
-            "subscribers.id as subscriber_id",
-            "subscribers.email",
-          ])
+          .where("automation_enrollments.automation_id", "=", id)
+          .$if(statusFilter !== null, (qb) =>
+            qb.where("automation_enrollments.status", "=", statusFilter!),
+          )
+          .$if(query.length > 0, (qb) =>
+            qb.where(({ or, eb }) =>
+              or([
+                eb("subscribers.email", "ilike", `%${query}%`),
+                eb("subscribers.name", "ilike", `%${query}%`),
+              ]),
+            ),
+          );
+
+        const [rows, total] = await Promise.all([
+          base
+            .select([
+              "automation_enrollments.id",
+              "automation_enrollments.status",
+              "automation_enrollments.current_node_id",
+              "automation_enrollments.next_run_at",
+              "automation_enrollments.started_at",
+              "automation_enrollments.completed_at",
+              "automation_enrollments.updated_at",
+              "subscribers.id as subscriber_id",
+              "subscribers.email",
+              "subscribers.name",
+            ])
+            .orderBy("automation_enrollments.id", "desc")
+            .limit(per_page)
+            .offset((page - 1) * per_page)
+            .execute(),
+          base.select(db.fn.countAll().as("count")).executeTakeFirstOrThrow(),
+        ]);
+
+        return { enrollments: rows, total: Number(total.count), page, per_page };
+      },
+    );
+
+    /** Stops a contact's run without deleting the history of it. */
+    adminApp.post(
+      "/api/v1/automations/:id/enrollments/:enrollmentId/cancel",
+      { preHandler: adminApp.requirePermission("automations:manage") },
+      async (req) => {
+        const { id, enrollmentId } = EnrollmentParams.parse(req.params);
+        const updated = await db
+          .updateTable("automation_enrollments")
+          .set({ status: "cancelled", next_run_at: null, completed_at: new Date() })
+          .where("id", "=", enrollmentId)
           .where("automation_id", "=", id)
-          .orderBy("automation_enrollments.id", "desc")
-          .limit(200)
+          .where("status", "=", "active")
+          .returning("id")
+          .executeTakeFirst();
+        if (!updated) throw new NotFoundError("active enrollment");
+        return { ok: true };
+      },
+    );
+
+    /** Removes the enrollment outright. Its node-run rows go with it (ON
+     * DELETE CASCADE), so the funnel forgets the contact too -- unlike cancel,
+     * which leaves them counted at every step they actually reached. */
+    adminApp.delete(
+      "/api/v1/automations/:id/enrollments/:enrollmentId",
+      { preHandler: adminApp.requirePermission("automations:manage") },
+      async (req) => {
+        const { id, enrollmentId } = EnrollmentParams.parse(req.params);
+        await db
+          .deleteFrom("automation_enrollments")
+          .where("id", "=", enrollmentId)
+          .where("automation_id", "=", id)
           .execute();
+        return { ok: true };
+      },
+    );
+
+    /** The whole funnel in one call: entrance, per-step contact counts, and
+     * per-email engagement. Backs every tab of the report page. */
+    adminApp.get(
+      "/api/v1/automations/:id/report",
+      { preHandler: adminApp.requirePermission("automations:get") },
+      async (req) => {
+        const { id } = IdParam.parse(req.params);
+        const automation = await getAutomationOrThrow(db, id);
+        return getAutomationReport(db, id, automation.graph);
       },
     );
 

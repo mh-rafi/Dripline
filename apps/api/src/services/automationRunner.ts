@@ -71,6 +71,21 @@ export async function processEnrollmentStep(
     return;
   }
 
+  // Logged before the action runs, so a node that throws still counts as
+  // reached and the drop-off shows up at the *next* step rather than this one.
+  // ON CONFLICT DO NOTHING against the (enrollment, node) unique index: a
+  // `retry` comes back here and must not count the contact twice.
+  await db
+    .insertInto("automation_node_runs")
+    .values({
+      automation_id: automation.id,
+      node_id: node.id,
+      enrollment_id: enrollment.id,
+      subscriber_id: subscriber.id,
+    })
+    .onConflict((oc) => oc.columns(["enrollment_id", "node_id"]).doNothing())
+    .execute();
+
   let result: ActionResult;
   try {
     result = await action.execute({

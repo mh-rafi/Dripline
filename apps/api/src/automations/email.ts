@@ -61,8 +61,18 @@ export type SendCustomEmailSettings = z.infer<typeof SendCustomEmailConfig>;
  * existing preference page (which only needs a valid signature and the
  * contact); the one-click List-Unsubscribe target gets its own endpoint in
  * routes/tracking.ts since there are no campaign lists to leave. */
-export function unsubscribeUrls(config: Config, automation: Automation, subscriber: Subscriber) {
-  const ref = unsubscribeRef("automation", automation.id);
+export function unsubscribeUrls(
+  config: Config,
+  automation: Automation,
+  subscriber: Subscriber,
+  emailNodeId?: number | null,
+) {
+  // Signed against the email node when the caller has one (a real send), so
+  // the departure is attributable to the exact step. A preview or test send
+  // has no node ref and falls back to the automation.
+  const ref = emailNodeId
+    ? unsubscribeRef("automation_node", emailNodeId)
+    : unsubscribeRef("automation", automation.id);
   return {
     oneClick: unsubscribeOneClickUrl(config, ref, subscriber.id),
     page: unsubscribePageUrl(config, ref, subscriber.id),
@@ -95,7 +105,7 @@ export async function renderAutomationEmail(
   settings: SendCustomEmailContentSettings,
   tracking?: { emailNodeId: number } | null,
 ): Promise<RenderedAutomationEmail> {
-  const unsub = unsubscribeUrls(config, automation, subscriber);
+  const unsub = unsubscribeUrls(config, automation, subscriber, tracking?.emailNodeId);
   const context = {
     Subscriber: {
       ID: subscriber.id,

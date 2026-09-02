@@ -270,6 +270,10 @@ export interface CampaignUnsubscribesTable {
   subscriber_id: number | null;
   campaign_id: number | null;
   automation_id: number | null;
+  /** Which email step the departure came from, when it came from an
+   * automation. Null on campaign rows and on automation rows created before
+   * per-node attribution existed. */
+  automation_email_node_id: number | null;
   source: UnsubscribeSource;
   list_ids: Generated<number[]>;
   /** Optional feedback, asked for on the preference page *after* the
@@ -300,6 +304,17 @@ export interface AutomationEmailNodesTable {
 
 /** One row per automation email handed to a connection: the denominator for
  * this node's open and click rates. */
+/** One row per (enrollment, node) the runner has executed -- the funnel's
+ * "contacts who reached this step". Append-only; see the migration. */
+export interface AutomationNodeRunsTable {
+  id: Generated<string>;
+  automation_id: number;
+  node_id: string;
+  enrollment_id: string;
+  subscriber_id: number | null;
+  created_at: Generated<Timestamp>;
+}
+
 export interface AutomationEmailSendsTable {
   id: Generated<string>;
   email_node_id: number;
@@ -436,6 +451,7 @@ export interface Database {
   links: LinksTable;
   link_clicks: LinkClicksTable;
   automation_email_nodes: AutomationEmailNodesTable;
+  automation_node_runs: AutomationNodeRunsTable;
   automation_email_sends: AutomationEmailSendsTable;
   automation_views: AutomationViewsTable;
   automation_link_clicks: AutomationLinkClicksTable;

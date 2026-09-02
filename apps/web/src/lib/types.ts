@@ -240,8 +240,47 @@ export interface AutomationEnrollment {
   next_run_at: string | null;
   started_at: string;
   completed_at: string | null;
+  updated_at: string;
   subscriber_id: number;
   email: string;
+  name: string;
+}
+
+export interface AutomationEnrollmentPage {
+  enrollments: AutomationEnrollment[];
+  total: number;
+  page: number;
+  per_page: number;
+}
+
+export interface AutomationReportEmail {
+  subject: string;
+  sent: number;
+  opens: number;
+  unique_opens: number;
+  clicks: number;
+  unique_clicks: number;
+  unsubscribes: number;
+  links: { url: string; clicks: number; unique_clicks: number }[];
+}
+
+/** One graph node in path order. `contacts` is how many reached it, from the
+ * node-run log -- not where anyone currently sits. */
+export interface AutomationReportStep {
+  node_id: string;
+  type: string;
+  label: string;
+  contacts: number;
+  pct: number;
+  drop_pct: number;
+  email: AutomationReportEmail | null;
+}
+
+export interface AutomationReport {
+  entered: number;
+  enrollment_counts: { active: number; completed: number; cancelled: number };
+  steps: AutomationReportStep[];
+  conversion_pct: number;
 }
 
 export type UserType = "user" | "api";

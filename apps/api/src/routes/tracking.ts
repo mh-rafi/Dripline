@@ -59,7 +59,11 @@ const ShortUnsubParams = z.object({
   sig: z.string().length(16),
 });
 
-type ShortUnsubLink = { kind: "campaign" | "automation"; id: number; subscriberId: number };
+type ShortUnsubLink = {
+  kind: "campaign" | "automation" | "automation_node";
+  id: number;
+  subscriberId: number;
+};
 
 /** Resolves the three segments of a short unsubscribe URL and verifies its
  * signature. Null means it isn't a link this install issued. */
@@ -72,10 +76,27 @@ function parseShortUnsub(config: Config, params: unknown): ShortUnsubLink | null
   return { ...parsed, subscriberId };
 }
 
-function originOf(link: ShortUnsubLink) {
-  return link.kind === "campaign"
-    ? { campaignId: link.id, automationId: null }
-    : { campaignId: null, automationId: link.id };
+/** Where the departure gets attributed. An "automation_node" ref names an
+ * automation_email_nodes row, so its automation has to be looked up -- both
+ * columns are filled, keeping automation-level totals identical to what the
+ * older "automation" refs produce. */
+async function originOf(db: DB, link: ShortUnsubLink) {
+  if (link.kind === "campaign") {
+    return { campaignId: link.id, automationId: null, automationEmailNodeId: null };
+  }
+  if (link.kind === "automation") {
+    return { campaignId: null, automationId: link.id, automationEmailNodeId: null };
+  }
+  const node = await db
+    .selectFrom("automation_email_nodes")
+    .select("automation_id")
+    .where("id", "=", link.id)
+    .executeTakeFirst();
+  return {
+    campaignId: null,
+    automationId: node?.automation_id ?? null,
+    automationEmailNodeId: node ? link.id : null,
+  };
 }
 
 /** The lists an unsubscribe page offers: public ones the contact hasn't
@@ -288,7 +309,7 @@ export default async function trackingRoutes(
         : await unsubscribeFromAllLists(db, link.subscriberId);
     await recordUnsubscribe(db, {
       subscriberId: link.subscriberId,
-      ...originOf(link),
+      ...(await originOf(db, link)),
       source: "one_click",
       listIds,
     });
@@ -320,7 +341,7 @@ export default async function trackingRoutes(
     // which case there is no row to attach anything to.
     const unsubscribe_id = await recordUnsubscribe(db, {
       subscriberId: link.subscriberId,
-      ...originOf(link),
+      ...(await originOf(db, link)),
       source: "preferences",
       listIds: changed,
     });
@@ -334,7 +355,7 @@ export default async function trackingRoutes(
     const listIds = await unsubscribeFromAllLists(db, link.subscriberId);
     const unsubscribe_id = await recordUnsubscribe(db, {
       subscriberId: link.subscriberId,
-      ...originOf(link),
+      ...(await originOf(db, link)),
       source: "all",
       listIds,
     });
