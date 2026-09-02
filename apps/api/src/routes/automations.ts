@@ -484,6 +484,8 @@ export default async function automationRoutes(
           subject: rendered.subject,
           html: rendered.html,
           text: rendered.text,
+          fromNameOverride: parsed.data.from_name,
+          replyTo: parsed.data.reply_to,
           unsubscribeUrl: rendered.unsubscribeUrl,
         });
 

@@ -85,6 +85,8 @@ const sendCustomEmail = defineAction({
       subject: rendered.subject,
       html: rendered.html,
       text: rendered.text,
+      fromNameOverride: settings.from_name,
+      replyTo: settings.reply_to,
       unsubscribeUrl: rendered.unsubscribeUrl,
     });
 

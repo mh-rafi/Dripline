@@ -195,6 +195,26 @@ function SendCustomEmailSettings({ config, onChange, automation, nodeId }: Setti
         </p>
       </div>
 
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-2">
+          <FormLabel>From name (optional)</FormLabel>
+          <Input
+            value={stringOf(config, "from_name")}
+            onChange={(e) => onChange({ ...config, from_name: e.target.value || null })}
+            placeholder="Leave blank to use the connection's"
+          />
+        </div>
+        <div className="space-y-2">
+          <FormLabel>Reply-to (optional)</FormLabel>
+          <Input
+            type="email"
+            value={stringOf(config, "reply_to")}
+            onChange={(e) => onChange({ ...config, reply_to: e.target.value || null })}
+            placeholder="replies@example.com"
+          />
+        </div>
+      </div>
+
       <div className="space-y-2">
         <FormLabel>Tracking</FormLabel>
         <div className="flex items-center gap-3">
@@ -418,8 +438,12 @@ function validateSendCustomEmail(config: NodeConfig): string | null {
   if (!stringOf(config, "subject").trim()) missing.push("subject");
   if (!stringOf(config, "body").trim()) missing.push("body");
   if (typeof config.connection_id !== "number") missing.push("sending connection");
-  if (missing.length === 0) return null;
-  return `Missing ${missing.join(", ")}`;
+  if (missing.length > 0) return `Missing ${missing.join(", ")}`;
+  // Caught here rather than only at publish time, where the zod error names
+  // the field but not the block it belongs to.
+  const replyTo = stringOf(config, "reply_to").trim();
+  if (replyTo && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(replyTo)) return "Reply-to is not an email";
+  return null;
 }
 
 function listSummary(prefix: string) {
@@ -453,6 +477,8 @@ export const ACTIONS: NodeUi[] = [
       body: "",
       content_type: "richtext",
       template_id: null,
+      from_name: null,
+      reply_to: null,
       track_opens: true,
       track_clicks: true,
       fallback_connection_ids: [],

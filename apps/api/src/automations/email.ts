@@ -38,6 +38,14 @@ export const SendCustomEmailContent = z.object({
 });
 
 export const SendCustomEmailConfig = SendCustomEmailContent.extend({
+  /** Both optional, both overriding the sending connection's own values for
+   * this step only -- the same pair campaigns carry. `from_name` is valid on
+   * its own (the connection's address is still used), which is why there is no
+   * from_email here: changing the address breaks SPF/DKIM alignment with the
+   * connection unless the domain is set up for it, and that is a
+   * connection-level decision rather than a per-step one. */
+  from_name: z.string().nullish(),
+  reply_to: z.string().email().nullish(),
   /** Required, and explicit: there is deliberately no implicit "any enabled
    * connection" fallback (see services/connections.ts), so a node without one
    * could be published and would then silently drop every email it tried to

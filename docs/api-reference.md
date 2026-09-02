@@ -381,7 +381,11 @@ Triggers: `list_applied`, `list_removed`, `contact_created`, `webhook_incoming`.
 The two list triggers require at least one list in `trigger_config.list_ids` --
 an empty selection neither publishes nor matches anything.
 Actions: `wait`, `send_custom_email`, `apply_list`, `remove_list`.
-`send_custom_email` takes an optional `template_id` -- null or absent sends the
+`send_custom_email` takes optional `from_name` and `reply_to`, both overriding the
+sending connection's own values for that step only (null or absent uses the
+connection's). There is no `from_email`: `from_name` is valid on its own, while
+changing the address breaks SPF/DKIM alignment unless the connection's domain is
+set up for it. It also takes an optional `template_id` -- null or absent sends the
 body unwrapped (the default), otherwise the body goes into that template's
 `{{ Body }}` slot, the same wrapper campaigns use. Ignored for
 `content_type: "plain"`.
