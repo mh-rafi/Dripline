@@ -6,15 +6,11 @@ import Badge from "../components/Badge.js";
 import {
   PageHeaderWrapper,
   BlockLayout,
-  Table,
-  TableHeader,
-  TableBody,
-  TableRow,
-  TableHead,
-  TableCell,
+  DataTable,
   TableEmptyState,
   Typography,
 } from "../components/ui/index.js";
+import type { DataTableColumn } from "../components/ui/index.js";
 
 export default function Dashboard() {
   const [subscriberCount, setSubscriberCount] = useState(0);
@@ -38,6 +34,21 @@ export default function Dashboard() {
     { label: "Running now", value: running.length },
   ];
 
+  const columns: DataTableColumn<Campaign>[] = [
+    {
+      key: "name",
+      header: "Name",
+      mobile: "title",
+      cell: (c) => (
+        <Link to={`/campaigns/${c.id}`} className="text-primary hover:underline">
+          {c.name}
+        </Link>
+      ),
+    },
+    { key: "status", header: "Status", mobile: "status", cell: (c) => <Badge status={c.status} /> },
+    { key: "sent", header: "Sent", cell: (c) => `${c.sent} / ${c.to_send}` },
+  ];
+
   return (
     <div>
       <PageHeaderWrapper variant="title-only" title="Dashboard" />
@@ -51,43 +62,20 @@ export default function Dashboard() {
         ))}
       </div>
 
-      <BlockLayout>
-        <Typography variant="h3" className="mb-4">
-          Recent campaigns
-        </Typography>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Sent</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {campaigns.slice(0, 8).map((c) => (
-              <TableRow key={c.id}>
-                <TableCell>
-                  <Link to={`/campaigns/${c.id}`} className="text-primary hover:underline">
-                    {c.name}
-                  </Link>
-                </TableCell>
-                <TableCell>
-                  <Badge status={c.status} />
-                </TableCell>
-                <TableCell>
-                  {c.sent} / {c.to_send}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-        {campaigns.length === 0 && (
+      <Typography variant="h3" className="mb-4">
+        Recent campaigns
+      </Typography>
+      <DataTable
+        columns={columns}
+        rows={campaigns.slice(0, 8)}
+        rowKey={(c) => c.id}
+        empty={
           <TableEmptyState
             title="No campaigns yet"
             description="Create your first campaign to get started."
           />
-        )}
-      </BlockLayout>
+        }
+      />
     </div>
   );
 }

@@ -75,6 +75,15 @@ export {
   TablePagination,
 } from "./data-display/table.js";
 
+export { DataTable } from "./data-display/data-table.js";
+export type {
+  DataTableProps,
+  DataTableColumn,
+  DataTableAction,
+  DataTableSelection,
+  DataTableMobileRole,
+} from "./data-display/data-table.js";
+
 export { Tag, tagVariants } from "./data-display/tags.js";
 export type { TagProps } from "./data-display/tags.js";
 
@@ -91,6 +100,7 @@ export {
   DialogFooter,
   DialogTitle,
   DialogDescription,
+  dialogContentVariants,
 } from "./feedback/dialog.js";
 
 export { Popconfirm } from "./feedback/popconfirm.js";

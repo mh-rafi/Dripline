@@ -10,6 +10,7 @@ import {
   PageHeaderWrapper,
   BlockLayout,
   Button,
+  TableWrapper,
   Table,
   TableHeader,
   TableBody,
@@ -82,57 +83,62 @@ export default function Settings() {
               </Button>
             </div>
 
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Last used</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {users.map((u) => (
-                  <TableRow key={u.id}>
-                    <TableCell>
-                      <Link to={`/settings/users/${u.id}`} className="text-primary hover:underline">
-                        {u.name}
-                      </Link>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {u.email ?? <span>—</span>}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">{u.type}</TableCell>
-                    <TableCell className="text-muted-foreground">{u.role_name}</TableCell>
-                    <TableCell>
-                      <Badge status={u.status} />
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {u.last_used_at ? new Date(u.last_used_at).toLocaleString() : "never"}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button variant="outline" size="sm" asChild>
-                          <Link to={`/settings/users/${u.id}`}>Edit</Link>
-                        </Button>
-                        <Popconfirm
-                          description="Delete this user?"
-                          onConfirm={() => removeUser(u.id)}
-                          confirmText="Delete"
-                        >
-                          <Button variant="outline" size="sm">
-                            Delete
-                          </Button>
-                        </Popconfirm>
-                      </div>
-                    </TableCell>
+            <TableWrapper>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Email</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Role</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Last used</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {users.map((u) => (
+                    <TableRow key={u.id}>
+                      <TableCell>
+                        <Link
+                          to={`/settings/users/${u.id}`}
+                          className="text-primary hover:underline"
+                        >
+                          {u.name}
+                        </Link>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {u.email ?? <span>—</span>}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">{u.type}</TableCell>
+                      <TableCell className="text-muted-foreground">{u.role_name}</TableCell>
+                      <TableCell>
+                        <Badge status={u.status} />
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {u.last_used_at ? new Date(u.last_used_at).toLocaleString() : "never"}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-2">
+                          <Button variant="outline" size="sm" asChild>
+                            <Link to={`/settings/users/${u.id}`}>Edit</Link>
+                          </Button>
+                          <Popconfirm
+                            description="Delete this user?"
+                            onConfirm={() => removeUser(u.id)}
+                            confirmText="Delete"
+                          >
+                            <Button variant="outline" size="sm">
+                              Delete
+                            </Button>
+                          </Popconfirm>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableWrapper>
             {users.length === 0 && (
               <TableEmptyState title="No users yet" description="Add one to get started." />
             )}
@@ -150,64 +156,66 @@ export default function Settings() {
               </Button>
             </div>
 
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Permissions</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {roles.map((r) => {
-                  const isSuperAdmin = r.id === 1;
-                  return (
-                    <TableRow key={r.id}>
-                      <TableCell>
-                        {isSuperAdmin ? (
-                          r.name
-                        ) : (
-                          <Link
-                            to={`/settings/roles/${r.id}`}
-                            className="text-primary hover:underline"
-                          >
-                            {r.name}
-                          </Link>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {isSuperAdmin ? "All permissions" : `${r.permissions.length} granted`}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {isSuperAdmin ? (
-                          <span
-                            className="text-muted-foreground text-sm"
-                            title="The built-in Super Admin role can't be edited or deleted"
-                          >
-                            built-in
-                          </span>
-                        ) : (
-                          <div className="flex justify-end gap-2">
-                            <Button variant="outline" size="sm" asChild>
-                              <Link to={`/settings/roles/${r.id}`}>Edit</Link>
-                            </Button>
-                            <Popconfirm
-                              description="Delete this role?"
-                              onConfirm={() => removeRole(r.id)}
-                              confirmText="Delete"
+            <TableWrapper>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Permissions</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {roles.map((r) => {
+                    const isSuperAdmin = r.id === 1;
+                    return (
+                      <TableRow key={r.id}>
+                        <TableCell>
+                          {isSuperAdmin ? (
+                            r.name
+                          ) : (
+                            <Link
+                              to={`/settings/roles/${r.id}`}
+                              className="text-primary hover:underline"
                             >
-                              <Button variant="outline" size="sm">
-                                Delete
+                              {r.name}
+                            </Link>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {isSuperAdmin ? "All permissions" : `${r.permissions.length} granted`}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {isSuperAdmin ? (
+                            <span
+                              className="text-muted-foreground text-sm"
+                              title="The built-in Super Admin role can't be edited or deleted"
+                            >
+                              built-in
+                            </span>
+                          ) : (
+                            <div className="flex justify-end gap-2">
+                              <Button variant="outline" size="sm" asChild>
+                                <Link to={`/settings/roles/${r.id}`}>Edit</Link>
                               </Button>
-                            </Popconfirm>
-                          </div>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+                              <Popconfirm
+                                description="Delete this role?"
+                                onConfirm={() => removeRole(r.id)}
+                                confirmText="Delete"
+                              >
+                                <Button variant="outline" size="sm">
+                                  Delete
+                                </Button>
+                              </Popconfirm>
+                            </div>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </TableWrapper>
             {roles.length === 0 && <TableEmptyState title="No roles" description="" />}
           </BlockLayout>
         </TabsContent>

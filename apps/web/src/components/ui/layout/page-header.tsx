@@ -5,15 +5,24 @@ import { Button } from "../base/button";
 import { Typography } from "../base/typography";
 
 const PageHeaderTitleRow = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div className={cn("flex items-center justify-between", className)} {...props} />
+  <div
+    className={cn(
+      "flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4",
+      className,
+    )}
+    {...props}
+  />
 );
 
 const PageHeaderTitleSection = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div className={cn("flex items-center", className)} {...props} />
+  <div className={cn("flex min-w-0 items-center", className)} {...props} />
 );
 
 const PageHeaderActions = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div className={cn("flex items-center gap-2", className)} {...props} />
+  <div
+    className={cn("flex shrink-0 items-center gap-2 [&>*]:flex-1 sm:[&>*]:flex-none", className)}
+    {...props}
+  />
 );
 
 export interface PageHeaderWrapperProps extends React.HTMLAttributes<HTMLDivElement> {

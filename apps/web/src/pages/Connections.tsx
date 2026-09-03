@@ -1,21 +1,15 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { api } from "../lib/api.js";
 import type { Connection } from "../lib/types.js";
 import {
   PageHeaderWrapper,
-  BlockLayout,
   Button,
-  Table,
-  TableHeader,
-  TableBody,
-  TableRow,
-  TableHead,
-  TableCell,
+  DataTable,
   TableEmptyState,
-  Popconfirm,
   toast,
 } from "../components/ui/index.js";
+import type { DataTableAction, DataTableColumn } from "../components/ui/index.js";
 
 function configSummary(c: Connection): string {
   const cfg = c.config as Record<string, unknown>;
@@ -30,6 +24,7 @@ function rateLimitSummary(c: Connection): string {
 }
 
 export default function Connections() {
+  const navigate = useNavigate();
   const [connections, setConnections] = useState<Connection[]>([]);
 
   function load() {
@@ -52,6 +47,90 @@ export default function Connections() {
     toast.success("Connection deleted");
   }
 
+  const columns: DataTableColumn<Connection>[] = [
+    {
+      key: "name",
+      header: "Name",
+      mobile: "title",
+      cell: (c) => (
+        <Link to={`/connections/${c.id}`} className="text-primary hover:underline">
+          {c.name}
+        </Link>
+      ),
+    },
+    {
+      key: "type",
+      header: "Type",
+      mobile: "subtitle",
+      className: "text-muted-foreground",
+      cell: (c) => configSummary(c),
+    },
+    {
+      key: "from",
+      header: "From",
+      className: "text-muted-foreground",
+      cell: (c) => (c.from_name ? `${c.from_name} <${c.from_email}>` : c.from_email),
+    },
+    {
+      key: "rate_limit",
+      header: "Rate limit",
+      mobileLabel: "Rate",
+      className: "text-muted-foreground",
+      cell: (c) => rateLimitSummary(c),
+    },
+    {
+      key: "status",
+      header: "Status",
+      mobile: "status",
+      cell: (c) => (
+        <>
+          {c.enabled ? (
+            <span className="bg-success/15 text-success inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium">
+              enabled
+            </span>
+          ) : (
+            <span
+              className="bg-destructive/15 text-destructive inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium"
+              title={c.disabled_reason ?? ""}
+            >
+              disabled
+            </span>
+          )}
+          {c.bounce_config?.enabled && (
+            <span
+              className={
+                c.bounce_disabled_reason
+                  ? "bg-destructive/15 text-destructive ml-1 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium"
+                  : "bg-success/15 text-success ml-1 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium"
+              }
+              title={c.bounce_disabled_reason ?? "Bounce mailbox scanning is active"}
+            >
+              {c.bounce_disabled_reason ? "bounce scan error" : "bounce scan on"}
+            </span>
+          )}
+        </>
+      ),
+    },
+  ];
+
+  function rowActions(c: Connection): DataTableAction[] {
+    return [
+      { label: "Edit", appearance: "outline", onClick: () => navigate(`/connections/${c.id}`) },
+      {
+        label: c.enabled ? "Disable" : "Enable",
+        appearance: "outline",
+        onClick: () => toggleEnable(c),
+      },
+      {
+        label: "Delete",
+        appearance: "outline",
+        variant: "destructive",
+        confirm: { description: "Delete this connection?", confirmText: "Delete" },
+        onClick: () => remove(c.id),
+      },
+    ];
+  }
+
   return (
     <div>
       <PageHeaderWrapper
@@ -70,87 +149,18 @@ export default function Connections() {
         so each site's mail stays on its own domain.
       </p>
 
-      <BlockLayout padding="sm">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>From</TableHead>
-              <TableHead>Rate limit</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {connections.map((c) => (
-              <TableRow key={c.id}>
-                <TableCell>
-                  <Link to={`/connections/${c.id}`} className="text-primary hover:underline">
-                    {c.name}
-                  </Link>
-                </TableCell>
-                <TableCell className="text-muted-foreground">{configSummary(c)}</TableCell>
-                <TableCell className="text-muted-foreground">
-                  {c.from_name ? `${c.from_name} <${c.from_email}>` : c.from_email}
-                </TableCell>
-                <TableCell className="text-muted-foreground">{rateLimitSummary(c)}</TableCell>
-                <TableCell>
-                  {c.enabled ? (
-                    <span className="bg-success/15 text-success inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium">
-                      enabled
-                    </span>
-                  ) : (
-                    <span
-                      className="bg-destructive/15 text-destructive inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium"
-                      title={c.disabled_reason ?? ""}
-                    >
-                      disabled
-                    </span>
-                  )}
-                  {c.bounce_config?.enabled && (
-                    <span
-                      className={
-                        c.bounce_disabled_reason
-                          ? "bg-destructive/15 text-destructive ml-1 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium"
-                          : "bg-success/15 text-success ml-1 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium"
-                      }
-                      title={c.bounce_disabled_reason ?? "Bounce mailbox scanning is active"}
-                    >
-                      {c.bounce_disabled_reason ? "bounce scan error" : "bounce scan on"}
-                    </span>
-                  )}
-                </TableCell>
-                <TableCell className="text-right">
-                  <div className="flex justify-end gap-2">
-                    <Button variant="outline" size="sm" asChild>
-                      <Link to={`/connections/${c.id}`}>Edit</Link>
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => toggleEnable(c)}>
-                      {c.enabled ? "Disable" : "Enable"}
-                    </Button>
-                    <Popconfirm
-                      description="Delete this connection?"
-                      onConfirm={() => remove(c.id)}
-                      confirmText="Delete"
-                    >
-                      <Button variant="outline" size="sm">
-                        Delete
-                      </Button>
-                    </Popconfirm>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-        {connections.length === 0 && (
+      <DataTable
+        columns={columns}
+        rows={connections}
+        rowKey={(c) => c.id}
+        rowActions={rowActions}
+        empty={
           <TableEmptyState
             title="No connections configured"
             description="Campaigns can't send until at least one is added."
           />
-        )}
-      </BlockLayout>
+        }
+      />
     </div>
   );
 }

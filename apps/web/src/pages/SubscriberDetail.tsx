@@ -15,6 +15,7 @@ import {
   SelectContent,
   SelectItem,
   FormLabel,
+  TableWrapper,
   Table,
   TableBody,
   TableRow,
@@ -228,34 +229,36 @@ export default function SubscriberDetail() {
         <Typography variant="h3" className="mb-4">
           Lists
         </Typography>
-        <Table>
-          <TableBody>
-            {subscriber.lists.map((l) => {
-              const badge = listMembershipBadge(l);
-              return (
-                <TableRow key={l.id}>
-                  <TableCell>
-                    {l.name} <span className="text-muted-foreground">({l.optin} opt-in)</span>
-                  </TableCell>
-                  <TableCell>
-                    <Badge status={badge.status} label={badge.label} title={badge.title} />
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {l.status === "unsubscribed" ? (
-                      <Button variant="outline" size="sm" onClick={() => resubscribeToList(l.id)}>
-                        Resubscribe
-                      </Button>
-                    ) : (
-                      <Button variant="outline" size="sm" onClick={() => removeFromList(l.id)}>
-                        Remove
-                      </Button>
-                    )}
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
+        <TableWrapper>
+          <Table>
+            <TableBody>
+              {subscriber.lists.map((l) => {
+                const badge = listMembershipBadge(l);
+                return (
+                  <TableRow key={l.id}>
+                    <TableCell>
+                      {l.name} <span className="text-muted-foreground">({l.optin} opt-in)</span>
+                    </TableCell>
+                    <TableCell>
+                      <Badge status={badge.status} label={badge.label} title={badge.title} />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {l.status === "unsubscribed" ? (
+                        <Button variant="outline" size="sm" onClick={() => resubscribeToList(l.id)}>
+                          Resubscribe
+                        </Button>
+                      ) : (
+                        <Button variant="outline" size="sm" onClick={() => removeFromList(l.id)}>
+                          Remove
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </TableWrapper>
         <div className="mt-4 flex gap-2">
           <Select value={addListId} onValueChange={setAddListId}>
             <SelectTrigger className="max-w-xs">

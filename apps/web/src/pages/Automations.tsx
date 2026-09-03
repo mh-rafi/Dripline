@@ -7,7 +7,6 @@ import { TRIGGERS } from "../automations/triggers.js";
 import { cn } from "../lib/utils.js";
 import {
   PageHeaderWrapper,
-  BlockLayout,
   Button,
   Dialog,
   DialogContent,
@@ -16,16 +15,11 @@ import {
   DialogTitle,
   FormLabel,
   Input,
-  Popconfirm,
-  Table,
-  TableHeader,
-  TableBody,
-  TableRow,
-  TableHead,
-  TableCell,
+  DataTable,
   TableEmptyState,
   toast,
 } from "../components/ui/index.js";
+import type { DataTableAction, DataTableColumn } from "../components/ui/index.js";
 
 function activeCount(automation: Automation): number {
   const counts = automation.enrollment_counts ?? [];
@@ -141,6 +135,49 @@ export default function Automations() {
     load();
   }
 
+  const columns: DataTableColumn<Automation>[] = [
+    {
+      key: "name",
+      header: "Name",
+      mobile: "title",
+      cell: (a) => (
+        <Link to={`/automations/${a.id}`} className="text-primary hover:underline">
+          {a.name}
+        </Link>
+      ),
+    },
+    {
+      key: "trigger",
+      header: "Trigger",
+      mobile: "subtitle",
+      className: "text-muted-foreground",
+      cell: (a) => TRIGGERS.find((t) => t.type === a.trigger_type)?.label ?? a.trigger_type,
+    },
+    { key: "steps", header: "Steps", cell: (a) => a.graph.nodes.length },
+    {
+      key: "contacts",
+      header: "Contacts in flow",
+      mobileLabel: "In flow",
+      cell: (a) => activeCount(a),
+    },
+    { key: "status", header: "Status", mobile: "status", cell: (a) => <Badge status={a.status} /> },
+  ];
+
+  function rowActions(a: Automation): DataTableAction[] {
+    return [
+      {
+        label: "Delete",
+        appearance: "outline",
+        variant: "destructive",
+        confirm: {
+          title: "Delete this automation?",
+          description: "Contacts currently in the flow are removed with it.",
+        },
+        onClick: () => remove(a.id),
+      },
+    ];
+  }
+
   return (
     <div>
       <PageHeaderWrapper
@@ -151,60 +188,19 @@ export default function Automations() {
 
       <CreateDialog open={dialogOpen} onOpenChange={setDialogOpen} />
 
-      <BlockLayout padding="sm">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Trigger</TableHead>
-              <TableHead>Steps</TableHead>
-              <TableHead>Contacts in flow</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {automations.map((automation) => (
-              <TableRow key={automation.id}>
-                <TableCell>
-                  <Link
-                    to={`/automations/${automation.id}`}
-                    className="text-primary hover:underline"
-                  >
-                    {automation.name}
-                  </Link>
-                </TableCell>
-                <TableCell className="text-muted-foreground">
-                  {TRIGGERS.find((t) => t.type === automation.trigger_type)?.label ??
-                    automation.trigger_type}
-                </TableCell>
-                <TableCell>{automation.graph.nodes.length}</TableCell>
-                <TableCell>{activeCount(automation)}</TableCell>
-                <TableCell>
-                  <Badge status={automation.status} />
-                </TableCell>
-                <TableCell className="text-right">
-                  <Popconfirm
-                    title="Delete this automation?"
-                    description="Contacts currently in the flow are removed with it."
-                    onConfirm={() => remove(automation.id)}
-                  >
-                    <Button variant="outline" size="sm">
-                      Delete
-                    </Button>
-                  </Popconfirm>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-        {automations.length === 0 && (
+      <DataTable
+        columns={columns}
+        rows={automations}
+        rowKey={(a) => a.id}
+        rowActions={rowActions}
+        actionsHeader=""
+        empty={
           <TableEmptyState
             title="No automations yet"
             description="Create one to send email sequences automatically when something happens."
           />
-        )}
-      </BlockLayout>
+        }
+      />
     </div>
   );
 }

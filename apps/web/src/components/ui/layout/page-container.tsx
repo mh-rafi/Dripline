@@ -11,9 +11,12 @@ const containerVariants = cva(
   "rounded-xl border border-container-border bg-container text-container-foreground shadow-2xs h-full overflow-auto",
 );
 
-const contentVariants = cva("py-10", {
+const contentVariants = cva("py-6 sm:py-10", {
   variants: {
-    variant: { full: "max-w-[1440px] mx-auto px-8", centered: "w-[768px] max-w-[90vw] mx-auto" },
+    variant: {
+      full: "max-w-[1440px] mx-auto px-4 sm:px-8",
+      centered: "w-[768px] max-w-[90vw] mx-auto",
+    },
   },
   defaultVariants: { variant: "full" },
 });

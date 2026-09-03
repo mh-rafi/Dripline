@@ -2,16 +2,8 @@ import { useEffect, useState } from "react";
 import { api } from "../lib/api.js";
 import type { CampaignEmail } from "../lib/types.js";
 import Badge from "./Badge.js";
-import {
-  Table,
-  TableHeader,
-  TableBody,
-  TableRow,
-  TableHead,
-  TableCell,
-  TableEmptyState,
-  TablePagination,
-} from "./ui/index.js";
+import { DataTable, TableEmptyState, TablePagination } from "./ui/index.js";
+import type { DataTableColumn } from "./ui/index.js";
 
 export default function CampaignEmailsTable({ campaignId }: { campaignId: number }) {
   const [emails, setEmails] = useState<CampaignEmail[]>([]);
@@ -30,45 +22,44 @@ export default function CampaignEmailsTable({ campaignId }: { campaignId: number
       });
   }, [campaignId, page, pageSize]);
 
+  const columns: DataTableColumn<CampaignEmail>[] = [
+    {
+      key: "subscriber",
+      header: "Subscriber",
+      mobile: "title",
+      cell: (e) => (
+        <>
+          <div>{e.subscriber_email}</div>
+          {e.subscriber_name && (
+            <div className="text-muted-foreground text-xs">{e.subscriber_name}</div>
+          )}
+        </>
+      ),
+    },
+    { key: "status", header: "Status", mobile: "status", cell: (e) => <Badge status={e.status} /> },
+    {
+      key: "sent_at",
+      header: "Sent at",
+      className: "text-muted-foreground",
+      cell: (e) => (e.sent_at ? new Date(e.sent_at).toLocaleString() : "—"),
+    },
+    { key: "opens", header: "Opens", align: "right", cell: (e) => e.opens },
+    { key: "clicks", header: "Clicks", align: "right", cell: (e) => e.clicks },
+  ];
+
   return (
     <div>
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Subscriber</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead>Sent at</TableHead>
-            <TableHead className="text-right">Opens</TableHead>
-            <TableHead className="text-right">Clicks</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {emails.map((e) => (
-            <TableRow key={e.id}>
-              <TableCell>
-                <div>{e.subscriber_email}</div>
-                {e.subscriber_name && (
-                  <div className="text-muted-foreground text-xs">{e.subscriber_name}</div>
-                )}
-              </TableCell>
-              <TableCell>
-                <Badge status={e.status} />
-              </TableCell>
-              <TableCell className="text-muted-foreground">
-                {e.sent_at ? new Date(e.sent_at).toLocaleString() : "—"}
-              </TableCell>
-              <TableCell className="text-right">{e.opens}</TableCell>
-              <TableCell className="text-right">{e.clicks}</TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-      {total === 0 && (
-        <TableEmptyState
-          title="No recipients yet"
-          description="Emails show up here once this campaign starts sending."
-        />
-      )}
+      <DataTable
+        columns={columns}
+        rows={emails}
+        rowKey={(e) => e.id}
+        empty={
+          <TableEmptyState
+            title="No recipients yet"
+            description="Emails show up here once this campaign starts sending."
+          />
+        }
+      />
       {total > 0 && (
         <TablePagination
           current={page}

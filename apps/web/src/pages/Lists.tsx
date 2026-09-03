@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../lib/api.js";
 import type { List } from "../lib/types.js";
+import type { DataTableAction, DataTableColumn } from "../components/ui/index.js";
 import Badge from "../components/Badge.js";
 import {
   PageHeaderWrapper,
@@ -15,14 +16,8 @@ import {
   SelectItem,
   FormLabel,
   FormRow,
-  Table,
-  TableHeader,
-  TableBody,
-  TableRow,
-  TableHead,
-  TableCell,
+  DataTable,
   TableEmptyState,
-  Popconfirm,
   Dialog,
   DialogContent,
   DialogHeader,
@@ -95,6 +90,86 @@ export default function Lists() {
     }
   }
 
+  const columns: DataTableColumn<List>[] = [
+    {
+      key: "name",
+      header: "Name",
+      mobile: "title",
+      cell: (l) => (
+        <button
+          type="button"
+          className="text-primary text-left hover:underline"
+          onClick={() => beginEdit(l)}
+        >
+          {l.name}
+        </button>
+      ),
+    },
+    {
+      key: "type",
+      header: "Type",
+      mobile: "status",
+      cell: (l) => <Badge status={l.type} label={l.type === "public" ? "Public" : "Private"} />,
+    },
+    {
+      key: "optin",
+      header: "Opt-in",
+      className: "text-muted-foreground",
+      cell: (l) => l.optin,
+    },
+    {
+      key: "subscribers",
+      header: "Subscribers",
+      cell: (l) => (
+        <>
+          <Link to={`/subscribers?list_ids=${l.id}`} className="text-primary hover:underline">
+            {l.subscriber_count ?? 0}
+          </Link>
+          {!!l.unsubscribed_count && (
+            <>
+              {" — "}
+              <Link
+                to={`/subscribers?list_ids=${l.id}&list_statuses=unsubscribed`}
+                className="text-destructive hover:underline"
+              >
+                {l.unsubscribed_count} unsubscribed
+              </Link>
+            </>
+          )}
+        </>
+      ),
+    },
+    {
+      key: "created",
+      header: "Created",
+      className: "text-muted-foreground",
+      cell: (l) => new Date(l.created_at).toLocaleDateString(),
+    },
+    {
+      key: "updated",
+      header: "Updated",
+      mobile: "hidden",
+      className: "text-muted-foreground",
+      cell: (l) => new Date(l.updated_at).toLocaleDateString(),
+    },
+  ];
+
+  function rowActions(l: List): DataTableAction[] {
+    return [
+      { label: "Edit", appearance: "outline", onClick: () => beginEdit(l) },
+      {
+        label: "Delete",
+        appearance: "outline",
+        variant: "destructive",
+        confirm: {
+          description: "Delete this list? Subscribers are not deleted.",
+          confirmText: "Delete",
+        },
+        onClick: () => remove(l.id),
+      },
+    ];
+  }
+
   return (
     <div>
       <PageHeaderWrapper
@@ -143,87 +218,18 @@ export default function Lists() {
         </BlockLayout>
       )}
 
-      <BlockLayout padding="sm">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Opt-in</TableHead>
-              <TableHead>Subscribers</TableHead>
-              <TableHead>Created</TableHead>
-              <TableHead>Updated</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {lists.map((l) => (
-              <TableRow key={l.id}>
-                <TableCell>
-                  <button
-                    type="button"
-                    className="text-primary text-left hover:underline"
-                    onClick={() => beginEdit(l)}
-                  >
-                    {l.name}
-                  </button>
-                </TableCell>
-                <TableCell>
-                  <Badge status={l.type} label={l.type === "public" ? "Public" : "Private"} />
-                </TableCell>
-                <TableCell className="text-muted-foreground">{l.optin}</TableCell>
-                <TableCell>
-                  <Link
-                    to={`/subscribers?list_ids=${l.id}`}
-                    className="text-primary hover:underline"
-                  >
-                    {l.subscriber_count ?? 0}
-                  </Link>
-                  {!!l.unsubscribed_count && (
-                    <>
-                      {" — "}
-                      <Link
-                        to={`/subscribers?list_ids=${l.id}&list_statuses=unsubscribed`}
-                        className="text-destructive hover:underline"
-                      >
-                        {l.unsubscribed_count} unsubscribed
-                      </Link>
-                    </>
-                  )}
-                </TableCell>
-                <TableCell className="text-muted-foreground">
-                  {new Date(l.created_at).toLocaleDateString()}
-                </TableCell>
-                <TableCell className="text-muted-foreground">
-                  {new Date(l.updated_at).toLocaleDateString()}
-                </TableCell>
-                <TableCell className="text-right">
-                  <div className="flex justify-end gap-2">
-                    <Button variant="outline" size="sm" onClick={() => beginEdit(l)}>
-                      Edit
-                    </Button>
-                    <Popconfirm
-                      description="Delete this list? Subscribers are not deleted."
-                      onConfirm={() => remove(l.id)}
-                      confirmText="Delete"
-                    >
-                      <Button variant="outline" size="sm">
-                        Delete
-                      </Button>
-                    </Popconfirm>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-        {lists.length === 0 && (
+      <DataTable
+        columns={columns}
+        rows={lists}
+        rowKey={(l) => l.id}
+        rowActions={rowActions}
+        empty={
           <TableEmptyState
             title="No lists yet"
             description="Create a list to organize your subscribers."
           />
-        )}
-      </BlockLayout>
+        }
+      />
 
       <Dialog open={!!editingList} onOpenChange={(open) => !open && setEditingList(null)}>
         <DialogContent>

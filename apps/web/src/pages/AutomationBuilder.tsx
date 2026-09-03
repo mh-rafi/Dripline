@@ -54,7 +54,7 @@ function SettingsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent variant="sheet">
         <DialogHeader>
           <DialogTitle>Automation settings</DialogTitle>
         </DialogHeader>
@@ -192,18 +192,19 @@ export default function AutomationBuilder() {
   return (
     <AutomationDataProvider>
       <div className="bg-background flex h-screen flex-col">
-        <header className="flex items-center gap-4 border-b px-6 py-3">
+        <header className="flex flex-wrap items-center gap-3 border-b px-4 py-3 sm:gap-4 sm:px-6">
           <Link
             to="/automations"
-            className="text-muted-foreground hover:text-foreground flex items-center gap-1 text-sm"
+            className="text-muted-foreground hover:text-foreground flex shrink-0 items-center gap-1 text-sm"
           >
-            <ArrowLeft className="h-4 w-4" /> Automations
+            <ArrowLeft className="h-4 w-4" />
+            <span className="sr-only sm:not-sr-only">Automations</span>
           </Link>
-          <span className="text-muted-foreground">/</span>
-          <h1 className="truncate text-sm font-semibold">{automation.name}</h1>
+          <span className="text-muted-foreground hidden sm:inline">/</span>
+          <h1 className="min-w-0 flex-1 truncate text-sm font-semibold">{automation.name}</h1>
           <Badge status={automation.status} />
 
-          <div className="ml-auto flex items-center gap-3">
+          <div className="flex w-full items-center gap-3 sm:ml-auto sm:w-auto">
             <Button variant="outline" size="sm" asChild>
               <Link to={`/automations/${id}/reports`}>
                 <BarChart3 className="mr-1 h-4 w-4" /> Reports
@@ -212,8 +213,8 @@ export default function AutomationBuilder() {
             <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)}>
               <Settings2 className="mr-1 h-4 w-4" /> Settings
             </Button>
-            <label className="flex items-center gap-2 text-sm">
-              <span className="text-muted-foreground">
+            <label className="ml-auto flex items-center gap-2 text-sm sm:ml-0">
+              <span className="text-muted-foreground hidden sm:inline">
                 {automation.status === "published" ? "Published" : "Not live"}
               </span>
               <Switch

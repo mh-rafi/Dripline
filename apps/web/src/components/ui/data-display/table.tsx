@@ -268,54 +268,67 @@ function TablePagination({
     pageNumbers.push(totalPages);
   }
 
+  const pageSizeSelect = onPageSizeChange && (
+    <select
+      value={pageSize}
+      onChange={(e) => onPageSizeChange(Number(e.target.value))}
+      className="border-input h-9 rounded-md border bg-transparent px-2 text-sm sm:h-8"
+      aria-label="Rows per page"
+    >
+      {pageSizeOptions.map((s) => (
+        <option key={s} value={s}>
+          {s} / page
+        </option>
+      ))}
+    </select>
+  );
+
   return (
-    <div className="flex items-center justify-between">
-      <div className="text-muted-foreground text-sm">
-        {total === 0 ? "No results" : `${startItem}–${endItem} of ${total}`}
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex items-center justify-between gap-3 sm:justify-start">
+        <div className="text-muted-foreground text-sm">
+          {total === 0 ? "No results" : `${startItem}–${endItem} of ${total}`}
+        </div>
+        <div className="sm:hidden">{pageSizeSelect}</div>
       </div>
       <div className="flex items-center gap-2">
-        {onPageSizeChange && (
-          <select
-            value={pageSize}
-            onChange={(e) => onPageSizeChange(Number(e.target.value))}
-            className="border-input h-8 rounded-md border bg-transparent px-2 text-sm"
-          >
-            {pageSizeOptions.map((s) => (
-              <option key={s} value={s}>
-                {s} / page
-              </option>
-            ))}
-          </select>
-        )}
-        <div className="flex items-center gap-1">
+        <div className="hidden sm:block">{pageSizeSelect}</div>
+        <div className="flex flex-1 items-center gap-2 sm:flex-none sm:gap-1">
           <Button
             variant="outline"
             size="sm"
+            className="h-10 flex-1 sm:h-9 sm:flex-none"
             disabled={current <= 1}
             onClick={() => onPageChange(current - 1)}
           >
             Prev
           </Button>
-          {pageNumbers.map((p, i) =>
-            p === "ellipsis" ? (
-              <span key={`e${i}`} className="text-muted-foreground px-1">
-                …
-              </span>
-            ) : (
-              <Button
-                key={p}
-                variant={p === current ? "default" : "outline"}
-                size="sm"
-                className="min-w-9"
-                onClick={() => onPageChange(p)}
-              >
-                {p}
-              </Button>
-            ),
-          )}
+          <span className="text-muted-foreground shrink-0 text-sm tabular-nums sm:hidden">
+            Page {current} of {totalPages}
+          </span>
+          <div className="hidden items-center gap-1 sm:flex">
+            {pageNumbers.map((p, i) =>
+              p === "ellipsis" ? (
+                <span key={`e${i}`} className="text-muted-foreground px-1">
+                  …
+                </span>
+              ) : (
+                <Button
+                  key={p}
+                  variant={p === current ? "default" : "outline"}
+                  size="sm"
+                  className="min-w-9"
+                  onClick={() => onPageChange(p)}
+                >
+                  {p}
+                </Button>
+              ),
+            )}
+          </div>
           <Button
             variant="outline"
             size="sm"
+            className="h-10 flex-1 sm:h-9 sm:flex-none"
             disabled={current >= totalPages}
             onClick={() => onPageChange(current + 1)}
           >

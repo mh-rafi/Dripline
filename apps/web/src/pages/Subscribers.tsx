@@ -1,7 +1,10 @@
 import { useEffect, useState, useCallback } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import { SlidersHorizontal } from "lucide-react";
 import { api } from "../lib/api.js";
+import { cn } from "../lib/utils.js";
 import type { List, Subscriber } from "../lib/types.js";
+import type { DataTableColumn } from "../components/ui/index.js";
 import Badge from "../components/Badge.js";
 import {
   PageHeaderWrapper,
@@ -18,15 +21,8 @@ import {
   CheckboxLabel,
   FormLabel,
   FormRow,
-  Table,
-  TableHeader,
-  TableBody,
-  TableRow,
-  TableHead,
-  TableCell,
+  DataTable,
   TableEmptyState,
-  CheckboxCell,
-  CheckboxHeaderCell,
   TablePagination,
   Popconfirm,
   Alert,
@@ -35,13 +31,10 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
+  DialogFooter,
   RadioGroup,
   RadioGroupItem,
   RadioGroupLabel,
-  Dropdown,
-  DropdownTrigger,
-  DropdownContent,
-  DropdownSeparator,
   toast,
 } from "../components/ui/index.js";
 
@@ -111,6 +104,7 @@ export default function Subscribers() {
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [showManageLists, setShowManageLists] = useState(false);
   const [listFilterSearch, setListFilterSearch] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
 
   const load = useCallback(() => {
     const query =
@@ -173,6 +167,19 @@ export default function Subscribers() {
       return params;
     });
   }
+
+  function clearFilters() {
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      params.delete("list_ids");
+      params.delete("list_statuses");
+      params.delete("blocklisted");
+      return params;
+    });
+  }
+
+  const activeFilterCount =
+    filterListIds.length + filterListStatuses.length + (filterBlocklisted ? 1 : 0);
 
   const selectedCount = selectAllMatching ? total : selectedIds.size;
   const pageIds = subscribers.map((s) => s.id);
@@ -412,13 +419,39 @@ export default function Subscribers() {
 
   const exportDisabled = !selectAllMatching && selectedIds.size > 1000;
 
+  const columns: DataTableColumn<Subscriber>[] = [
+    {
+      key: "email",
+      header: "Email",
+      mobile: "title",
+      cell: (s) => (
+        <Link to={`/subscribers/${s.id}`} className="text-primary hover:underline">
+          {s.email}
+        </Link>
+      ),
+    },
+    {
+      key: "name",
+      header: "Name",
+      mobile: "subtitle",
+      cell: (s) => s.name || <span className="text-muted-foreground">—</span>,
+    },
+    { key: "status", header: "Status", mobile: "status", cell: (s) => <Badge status={s.status} /> },
+    {
+      key: "joined",
+      header: "Joined",
+      className: "text-muted-foreground",
+      cell: (s) => new Date(s.created_at).toLocaleDateString(),
+    },
+  ];
+
   return (
     <div>
       <PageHeaderWrapper
         variant="title-with-actions"
         title="Subscribers"
         actions={
-          <div className="flex gap-2">
+          <>
             <Button variant="outline" asChild>
               <Link to="/subscribers/import">Import</Link>
             </Button>
@@ -430,7 +463,7 @@ export default function Subscribers() {
             >
               {showForm ? "Cancel" : "Add subscriber"}
             </Button>
-          </div>
+          </>
         }
       />
 
@@ -526,123 +559,141 @@ export default function Subscribers() {
       )}
 
       {/* Filters */}
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <Dropdown>
-          <DropdownTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              className={filterListIds.length > 0 ? "border-primary text-primary" : ""}
-            >
-              Filtered by Lists{filterListIds.length > 0 ? ` (${filterListIds.length})` : ""}
-            </Button>
-          </DropdownTrigger>
-          <DropdownContent align="start" size="md" className="p-2">
-            <Input
-              placeholder="Search…"
-              value={listFilterSearch}
-              onChange={(e) => setListFilterSearch(e.target.value)}
-              className="mb-2"
-            />
-            <div className="max-h-64 space-y-0.5 overflow-y-auto">
-              {lists
-                .filter((l) => l.name.toLowerCase().includes(listFilterSearch.toLowerCase()))
-                .map((l) => (
-                  <label
-                    key={l.id}
-                    className="hover:bg-accent flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm"
-                  >
-                    <Checkbox
-                      checked={filterListIds.includes(l.id)}
-                      onCheckedChange={() => toggleListFilter(l.id)}
-                    />
-                    {l.name}
-                  </label>
-                ))}
-              {lists.filter((l) => l.name.toLowerCase().includes(listFilterSearch.toLowerCase()))
-                .length === 0 && (
-                <div className="text-muted-foreground px-2 py-1.5 text-sm">No lists found</div>
-              )}
-            </div>
-          </DropdownContent>
-        </Dropdown>
-
-        <Dropdown>
-          <DropdownTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              className={
-                filterListStatuses.length > 0 || filterBlocklisted
-                  ? "border-primary text-primary"
-                  : ""
-              }
-            >
-              Filtered by Statuses
-              {filterListStatuses.length + (filterBlocklisted ? 1 : 0) > 0
-                ? ` (${filterListStatuses.length + (filterBlocklisted ? 1 : 0)})`
-                : ""}
-            </Button>
-          </DropdownTrigger>
-          <DropdownContent align="start" size="md" className="p-2">
-            <div className="space-y-0.5">
-              {LIST_STATUS_OPTIONS.map((opt) => (
-                <label
-                  key={opt.value}
-                  className="hover:bg-accent flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm"
-                >
-                  <Checkbox
-                    checked={filterListStatuses.includes(opt.value)}
-                    onCheckedChange={() => toggleListStatusFilter(opt.value)}
-                  />
-                  {opt.label}
-                </label>
-              ))}
-              <DropdownSeparator />
-              <label className="hover:bg-accent flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm">
-                <Checkbox checked={filterBlocklisted} onCheckedChange={toggleBlocklistedFilter} />
-                Blocklisted
-              </label>
-            </div>
-          </DropdownContent>
-        </Dropdown>
-
+      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
         <Input
           placeholder="Search by email or name…"
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          className="max-w-xs"
+          className="sm:max-w-xs"
         />
+        <Button
+          variant="outline"
+          size="sm"
+          className={cn("gap-2", activeFilterCount > 0 && "border-primary text-primary")}
+          onClick={() => setShowFilters(true)}
+        >
+          <SlidersHorizontal className="h-4 w-4" />
+          Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}
+        </Button>
       </div>
 
-      {/* Bulk action bar — only rendered when something is selected */}
+      {/* Filters sheet — one trigger for both list and status filters, rather
+          than two separate popovers that don't have room to open on a phone. */}
+      <Dialog open={showFilters} onOpenChange={setShowFilters}>
+        <DialogContent variant="sheet">
+          <DialogHeader>
+            <DialogTitle>Filters</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <FormLabel>Lists</FormLabel>
+              <Input
+                placeholder="Search lists…"
+                value={listFilterSearch}
+                onChange={(e) => setListFilterSearch(e.target.value)}
+              />
+              <div className="max-h-48 space-y-0.5 overflow-y-auto">
+                {lists
+                  .filter((l) => l.name.toLowerCase().includes(listFilterSearch.toLowerCase()))
+                  .map((l) => (
+                    <label
+                      key={l.id}
+                      className="hover:bg-accent flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm"
+                    >
+                      <Checkbox
+                        checked={filterListIds.includes(l.id)}
+                        onCheckedChange={() => toggleListFilter(l.id)}
+                      />
+                      {l.name}
+                    </label>
+                  ))}
+                {lists.filter((l) => l.name.toLowerCase().includes(listFilterSearch.toLowerCase()))
+                  .length === 0 && (
+                  <div className="text-muted-foreground px-2 py-1.5 text-sm">No lists found</div>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <FormLabel>Status</FormLabel>
+              <div className="space-y-0.5">
+                {LIST_STATUS_OPTIONS.map((opt) => (
+                  <label
+                    key={opt.value}
+                    className="hover:bg-accent flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm"
+                  >
+                    <Checkbox
+                      checked={filterListStatuses.includes(opt.value)}
+                      onCheckedChange={() => toggleListStatusFilter(opt.value)}
+                    />
+                    {opt.label}
+                  </label>
+                ))}
+                <label className="hover:bg-accent flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm">
+                  <Checkbox checked={filterBlocklisted} onCheckedChange={toggleBlocklistedFilter} />
+                  Blocklisted
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={clearFilters}
+              disabled={activeFilterCount === 0}
+              className="w-full sm:w-auto"
+            >
+              Reset
+            </Button>
+            <Button onClick={() => setShowFilters(false)} className="w-full sm:w-auto">
+              Done
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk action bar — only rendered when something is selected. Fixed to
+          the bottom on mobile (thumb reach, and there's no room for it inline
+          next to the filters), an ordinary block above the table on desktop. */}
       {selectedCount > 0 && (
         <BlockLayout
           padding="sm"
-          className="mb-4 flex flex-wrap items-center justify-between gap-3"
+          className="fixed inset-x-0 bottom-0 z-40 space-y-2 rounded-none border-x-0 border-b-0 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:static sm:z-auto sm:mb-4 sm:space-y-0 sm:rounded-lg sm:border sm:pb-4"
         >
-          <div className="flex items-center gap-4">
+          <div className="flex items-center justify-between gap-3">
             <span className="text-sm font-medium">{selectionLabel}</span>
-            {showSelectAllMatching && (
-              <button
-                type="button"
-                className="text-primary text-sm hover:underline"
-                onClick={() => setSelectAllMatching(true)}
-              >
-                Select all {total} matching{q ? ` "${q}"` : ""}
-              </button>
-            )}
+            <Button variant="ghost" size="sm" onClick={clearSelection}>
+              Clear
+            </Button>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          {showSelectAllMatching && (
+            <button
+              type="button"
+              className="text-primary block text-sm hover:underline"
+              onClick={() => setSelectAllMatching(true)}
+            >
+              Select all {total} matching{q ? ` "${q}"` : ""}
+            </button>
+          )}
+          <div className="flex items-center gap-2 overflow-x-auto sm:flex-wrap">
             <Button
               variant="outline"
               size="sm"
+              className="shrink-0"
               onClick={handleExport}
               disabled={busy || exportDisabled}
             >
               Export
             </Button>
-            <Button variant="outline" size="sm" onClick={openManageLists} disabled={busy}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+              onClick={openManageLists}
+              disabled={busy}
+            >
               Manage lists
             </Button>
             <Popconfirm
@@ -650,7 +701,7 @@ export default function Subscribers() {
               onConfirm={handleBlocklist}
               confirmText="Blocklist"
             >
-              <Button variant="outline" size="sm" disabled={busy}>
+              <Button variant="outline" size="sm" className="shrink-0" disabled={busy}>
                 Blocklist
               </Button>
             </Popconfirm>
@@ -659,13 +710,10 @@ export default function Subscribers() {
               onConfirm={handleDelete}
               confirmText="Delete"
             >
-              <Button variant="destructive" size="sm" disabled={busy}>
+              <Button variant="destructive" size="sm" className="shrink-0" disabled={busy}>
                 Delete
               </Button>
             </Popconfirm>
-            <Button variant="ghost" size="sm" onClick={clearSelection}>
-              Clear
-            </Button>
           </div>
           {exportDisabled && (
             <span className="text-muted-foreground text-xs">
@@ -687,72 +735,47 @@ export default function Subscribers() {
         </Alert>
       )}
 
-      {/* Table */}
-      <BlockLayout padding="sm" className="mb-4">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <CheckboxHeaderCell
-                checked={allOnPageSelected}
-                indeterminate={someOnPageSelected && !allOnPageSelected}
-                onCheckedChange={toggleAllOnPage}
-                aria-label="Select all on this page"
-              />
-              <TableHead>Email</TableHead>
-              <TableHead>Name</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Joined</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {subscribers.map((s) => (
-              <TableRow key={s.id} selected={selectedIds.has(s.id) || selectAllMatching}>
-                <CheckboxCell
-                  checked={selectedIds.has(s.id) || selectAllMatching}
-                  onCheckedChange={() => toggleRow(s.id)}
-                  aria-label={`Select ${s.email}`}
-                />
-                <TableCell>
-                  <Link to={`/subscribers/${s.id}`} className="text-primary hover:underline">
-                    {s.email}
-                  </Link>
-                </TableCell>
-                <TableCell>{s.name || <span className="text-muted-foreground">—</span>}</TableCell>
-                <TableCell>
-                  <Badge status={s.status} />
-                </TableCell>
-                <TableCell className="text-muted-foreground">
-                  {new Date(s.created_at).toLocaleDateString()}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-        {subscribers.length === 0 && (
-          <TableEmptyState
-            title="No subscribers found"
-            description="Add or import subscribers to get started."
+      {/* Table — bottom padding clears the fixed mobile bulk-action bar above. */}
+      <div className={selectedCount > 0 ? "pb-36 sm:pb-0" : undefined}>
+        <DataTable
+          columns={columns}
+          rows={subscribers}
+          rowKey={(s) => s.id}
+          className="mb-4"
+          selection={{
+            isSelected: (s) => selectedIds.has(s.id) || selectAllMatching,
+            onToggleRow: (s) => toggleRow(s.id),
+            rowLabel: (s) => `Select ${s.email}`,
+            allSelected: allOnPageSelected,
+            someSelected: someOnPageSelected,
+            onToggleAll: toggleAllOnPage,
+          }}
+          empty={
+            <TableEmptyState
+              title="No subscribers found"
+              description="Add or import subscribers to get started."
+            />
+          }
+        />
+
+        {/* Pagination */}
+        {total > 0 && (
+          <TablePagination
+            current={page}
+            pageSize={pageSize}
+            total={total}
+            onPageChange={setPage}
+            onPageSizeChange={(s) => {
+              setPageSize(s);
+              setPage(1);
+            }}
           />
         )}
-      </BlockLayout>
-
-      {/* Pagination */}
-      {total > 0 && (
-        <TablePagination
-          current={page}
-          pageSize={pageSize}
-          total={total}
-          onPageChange={setPage}
-          onPageSizeChange={(s) => {
-            setPageSize(s);
-            setPage(1);
-          }}
-        />
-      )}
+      </div>
 
       {/* Manage Lists dialog */}
       <Dialog open={showManageLists} onOpenChange={(open) => !open && setShowManageLists(false)}>
-        <DialogContent>
+        <DialogContent variant="sheet">
           <DialogHeader>
             <DialogTitle>
               Manage lists{" "}
@@ -851,18 +874,27 @@ export default function Subscribers() {
                 Processing… {progress.done}/{progress.total}
               </p>
             )}
-
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setShowManageLists(false)} disabled={busy}>
-                Cancel
-              </Button>
-              <Button onClick={applyManageLists} disabled={busy || mlListIds.length === 0}>
-                {busy
-                  ? "Processing…"
-                  : `Apply to ${selectAllMatching ? `all ${total} matching` : selectedCount} subscribers`}
-              </Button>
-            </div>
           </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowManageLists(false)}
+              disabled={busy}
+              className="w-full sm:w-auto"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={applyManageLists}
+              disabled={busy || mlListIds.length === 0}
+              className="w-full sm:w-auto"
+            >
+              {busy
+                ? "Processing…"
+                : `Apply to ${selectAllMatching ? `all ${total} matching` : selectedCount} subscribers`}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

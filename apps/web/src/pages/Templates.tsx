@@ -9,16 +9,11 @@ import {
   Button,
   Input,
   FormLabel,
-  Table,
-  TableHeader,
-  TableBody,
-  TableRow,
-  TableHead,
-  TableCell,
+  DataTable,
   TableEmptyState,
-  Popconfirm,
   Skeleton,
 } from "../components/ui/index.js";
+import type { DataTableAction, DataTableColumn } from "../components/ui/index.js";
 
 const HtmlEditor = lazy(() => import("../components/content-editor/HtmlEditor.js"));
 
@@ -91,6 +86,23 @@ export default function Templates() {
     load();
   }
 
+  const columns: DataTableColumn<Template>[] = [
+    { key: "name", header: "Name", mobile: "title", cell: (t) => t.name },
+  ];
+
+  function rowActions(t: Template): DataTableAction[] {
+    return [
+      { label: "Edit", appearance: "outline", onClick: () => startEdit(t) },
+      {
+        label: "Delete",
+        appearance: "outline",
+        variant: "destructive",
+        confirm: { description: "Delete this template?", confirmText: "Delete" },
+        onClick: () => remove(t.id),
+      },
+    ];
+  }
+
   return (
     <div>
       <PageHeaderWrapper
@@ -136,45 +148,18 @@ export default function Templates() {
 
       {preview && <PreviewModal html={preview} onClose={() => setPreview(null)} />}
 
-      <BlockLayout padding="sm">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {templates.map((t) => (
-              <TableRow key={t.id}>
-                <TableCell>{t.name}</TableCell>
-                <TableCell className="text-right">
-                  <div className="flex justify-end gap-2">
-                    <Button variant="outline" size="sm" onClick={() => startEdit(t)}>
-                      Edit
-                    </Button>
-                    <Popconfirm
-                      description="Delete this template?"
-                      onConfirm={() => remove(t.id)}
-                      confirmText="Delete"
-                    >
-                      <Button variant="outline" size="sm">
-                        Delete
-                      </Button>
-                    </Popconfirm>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-        {templates.length === 0 && (
+      <DataTable
+        columns={columns}
+        rows={templates}
+        rowKey={(t) => t.id}
+        rowActions={rowActions}
+        empty={
           <TableEmptyState
             title="No templates yet"
             description="Campaigns can also be sent without one."
           />
-        )}
-      </BlockLayout>
+        }
+      />
     </div>
   );
 }

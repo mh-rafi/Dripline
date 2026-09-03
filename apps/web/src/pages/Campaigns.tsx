@@ -6,18 +6,12 @@ import type { Campaign } from "../lib/types.js";
 import Badge from "../components/Badge.js";
 import {
   PageHeaderWrapper,
-  BlockLayout,
   Button,
-  Popconfirm,
-  Table,
-  TableHeader,
-  TableBody,
-  TableRow,
-  TableHead,
-  TableCell,
+  DataTable,
   TableEmptyState,
   toast,
 } from "../components/ui/index.js";
+import type { DataTableAction, DataTableColumn } from "../components/ui/index.js";
 
 // Matches the API's delete guard (routes/campaigns.ts) -- deleting any other
 // status is a silent no-op there, so the button isn't offered for those.
@@ -91,6 +85,82 @@ export default function Campaigns() {
     }
   }
 
+  const columns: DataTableColumn<Campaign>[] = [
+    {
+      key: "name",
+      header: "Name",
+      mobile: "title",
+      cell: (c) => (
+        <Link to={`/campaigns/${c.id}`} className="text-primary hover:underline">
+          {c.name}
+        </Link>
+      ),
+    },
+    {
+      key: "status",
+      header: "Status",
+      mobile: "status",
+      cell: (c) => <Badge status={c.status} />,
+    },
+    {
+      key: "sent",
+      header: "Sent",
+      cell: (c) => `${c.sent} / ${c.to_send}`,
+    },
+    {
+      key: "created",
+      header: "Created",
+      className: "text-muted-foreground",
+      cell: (c) => new Date(c.created_at).toLocaleDateString(),
+    },
+  ];
+
+  function rowActions(c: Campaign): DataTableAction[] {
+    const actions: DataTableAction[] = [];
+    if (STARTABLE.includes(c.status)) {
+      actions.push({
+        label: c.status === "paused" ? "Resume" : "Start sending",
+        icon: <Play className="h-4 w-4" />,
+        appearance: "icon",
+        disabled: actingId === c.id,
+        onClick: () => start(c),
+      });
+    }
+    if (c.status === "running") {
+      actions.push({
+        label: "Pause",
+        icon: <Pause className="h-4 w-4" />,
+        appearance: "icon",
+        disabled: actingId === c.id,
+        onClick: () => pause(c.id),
+      });
+    }
+    actions.push({
+      label: duplicatingId === c.id ? "Duplicating…" : "Duplicate",
+      icon: <Copy className="h-4 w-4" />,
+      appearance: "icon",
+      disabled: duplicatingId === c.id,
+      onClick: () => duplicate(c.id),
+    });
+    if (DELETABLE.includes(c.status)) {
+      actions.push({
+        label: "Delete",
+        icon: <Trash2 className="h-4 w-4" />,
+        appearance: "icon",
+        variant: "destructive",
+        confirm: {
+          description:
+            c.status === "finished"
+              ? `Delete "${c.name}"? This permanently deletes its send, open, and click history and can't be undone.`
+              : `Delete "${c.name}"? This can't be undone.`,
+          confirmText: "Delete",
+        },
+        onClick: () => remove(c.id),
+      });
+    }
+    return actions;
+  }
+
   return (
     <div>
       <PageHeaderWrapper
@@ -103,95 +173,18 @@ export default function Campaigns() {
         }
       />
 
-      <BlockLayout padding="sm">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Sent</TableHead>
-              <TableHead>Created</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {campaigns.map((c) => (
-              <TableRow key={c.id}>
-                <TableCell>
-                  <Link to={`/campaigns/${c.id}`} className="text-primary hover:underline">
-                    {c.name}
-                  </Link>
-                </TableCell>
-                <TableCell>
-                  <Badge status={c.status} />
-                </TableCell>
-                <TableCell>
-                  {c.sent} / {c.to_send}
-                </TableCell>
-                <TableCell className="text-muted-foreground">
-                  {new Date(c.created_at).toLocaleDateString()}
-                </TableCell>
-                <TableCell className="text-right">
-                  <div className="flex justify-end gap-1">
-                    {STARTABLE.includes(c.status) && (
-                      <Button
-                        variant="ghost"
-                        size="sm-icon"
-                        tooltip={c.status === "paused" ? "Resume" : "Start sending"}
-                        disabled={actingId === c.id}
-                        onClick={() => start(c)}
-                      >
-                        <Play className="h-4 w-4" />
-                      </Button>
-                    )}
-                    {c.status === "running" && (
-                      <Button
-                        variant="ghost"
-                        size="sm-icon"
-                        tooltip="Pause"
-                        disabled={actingId === c.id}
-                        onClick={() => pause(c.id)}
-                      >
-                        <Pause className="h-4 w-4" />
-                      </Button>
-                    )}
-                    <Button
-                      variant="ghost"
-                      size="sm-icon"
-                      tooltip={duplicatingId === c.id ? "Duplicating…" : "Duplicate"}
-                      disabled={duplicatingId === c.id}
-                      onClick={() => duplicate(c.id)}
-                    >
-                      <Copy className="h-4 w-4" />
-                    </Button>
-                    {DELETABLE.includes(c.status) && (
-                      <Popconfirm
-                        description={
-                          c.status === "finished"
-                            ? `Delete "${c.name}"? This permanently deletes its send, open, and click history and can't be undone.`
-                            : `Delete "${c.name}"? This can't be undone.`
-                        }
-                        onConfirm={() => remove(c.id)}
-                        confirmText="Delete"
-                      >
-                        <Button variant="ghost" size="sm-icon" tooltip="Delete">
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </Popconfirm>
-                    )}
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-        {campaigns.length === 0 && (
+      <DataTable
+        columns={columns}
+        rows={campaigns}
+        rowKey={(c) => c.id}
+        rowActions={rowActions}
+        empty={
           <TableEmptyState
             title="No campaigns yet"
             description="Create your first campaign to get started."
           />
-        )}
-      </BlockLayout>
+        }
+      />
     </div>
   );
 }

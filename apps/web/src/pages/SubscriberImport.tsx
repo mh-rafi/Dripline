@@ -20,6 +20,7 @@ import {
   Switch,
   FormLabel,
   FormRow,
+  TableWrapper,
   Table,
   TableHeader,
   TableBody,
@@ -521,58 +522,60 @@ export default function SubscriberImport() {
               {parsed.dataRows.length} row{parsed.dataRows.length === 1 ? "" : "s"} detected. Choose
               what each CSV column means — exactly one column must map to Email.
             </p>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>CSV column</TableHead>
-                  <TableHead>Sample value</TableHead>
-                  <TableHead>Maps to</TableHead>
-                  <TableHead>Attribute key</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {mapping.map((c) => (
-                  <TableRow key={c.index}>
-                    <TableCell>
-                      {c.header || (
-                        <span className="text-muted-foreground">(column {c.index + 1})</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {parsed.dataRows[0]?.[c.index] ?? ""}
-                    </TableCell>
-                    <TableCell>
-                      <Select
-                        value={c.role}
-                        onValueChange={(v) => setRole(c.index, v as ColumnRole)}
-                      >
-                        <SelectTrigger className="w-40">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="ignore">Ignore</SelectItem>
-                          <SelectItem value="email">Email</SelectItem>
-                          <SelectItem value="name">Name</SelectItem>
-                          <SelectItem value="attribs_json">Attributes (JSON)</SelectItem>
-                          <SelectItem value="tags">Tags</SelectItem>
-                          <SelectItem value="attribute">Attribute</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </TableCell>
-                    <TableCell>
-                      {c.role === "attribute" ? (
-                        <Input
-                          value={c.attributeKey}
-                          onChange={(e) => setAttributeKey(c.index, e.target.value)}
-                        />
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
-                    </TableCell>
+            <TableWrapper>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>CSV column</TableHead>
+                    <TableHead>Sample value</TableHead>
+                    <TableHead>Maps to</TableHead>
+                    <TableHead>Attribute key</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {mapping.map((c) => (
+                    <TableRow key={c.index}>
+                      <TableCell>
+                        {c.header || (
+                          <span className="text-muted-foreground">(column {c.index + 1})</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {parsed.dataRows[0]?.[c.index] ?? ""}
+                      </TableCell>
+                      <TableCell>
+                        <Select
+                          value={c.role}
+                          onValueChange={(v) => setRole(c.index, v as ColumnRole)}
+                        >
+                          <SelectTrigger className="w-40">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="ignore">Ignore</SelectItem>
+                            <SelectItem value="email">Email</SelectItem>
+                            <SelectItem value="name">Name</SelectItem>
+                            <SelectItem value="attribs_json">Attributes (JSON)</SelectItem>
+                            <SelectItem value="tags">Tags</SelectItem>
+                            <SelectItem value="attribute">Attribute</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </TableCell>
+                      <TableCell>
+                        {c.role === "attribute" ? (
+                          <Input
+                            value={c.attributeKey}
+                            onChange={(e) => setAttributeKey(c.index, e.target.value)}
+                          />
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableWrapper>
 
             <div className="space-y-3">
               <Typography variant="h3">Fixed attributes</Typography>
@@ -582,86 +585,88 @@ export default function SubscriberImport() {
                 <code>Mentor LMS</code>. A fixed attribute wins over a CSV column of the same key.
               </p>
               {fixedAttribs.length > 0 && (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Key</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Value</TableHead>
-                      <TableHead className="w-12" />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {fixedAttribs.map((fa) => (
-                      <TableRow key={fa.id}>
-                        <TableCell>
-                          <Input
-                            value={fa.key}
-                            placeholder="product"
-                            onChange={(e) => updateFixedAttribute(fa.id, { key: e.target.value })}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <Select
-                            value={fa.type}
-                            onValueChange={(v) =>
-                              updateFixedAttribute(fa.id, {
-                                type: v as FixedAttributeType,
-                                ...(v === "boolean" && fa.value !== "false"
-                                  ? { value: "true" }
-                                  : {}),
-                              })
-                            }
-                          >
-                            <SelectTrigger className="w-32">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="text">Text</SelectItem>
-                              <SelectItem value="number">Number</SelectItem>
-                              <SelectItem value="boolean">Boolean</SelectItem>
-                              <SelectItem value="json">JSON</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </TableCell>
-                        <TableCell>
-                          {fa.type === "boolean" ? (
+                <TableWrapper>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Key</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead>Value</TableHead>
+                        <TableHead className="w-12" />
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {fixedAttribs.map((fa) => (
+                        <TableRow key={fa.id}>
+                          <TableCell>
+                            <Input
+                              value={fa.key}
+                              placeholder="product"
+                              onChange={(e) => updateFixedAttribute(fa.id, { key: e.target.value })}
+                            />
+                          </TableCell>
+                          <TableCell>
                             <Select
-                              value={fa.value === "false" ? "false" : "true"}
-                              onValueChange={(v) => updateFixedAttribute(fa.id, { value: v })}
+                              value={fa.type}
+                              onValueChange={(v) =>
+                                updateFixedAttribute(fa.id, {
+                                  type: v as FixedAttributeType,
+                                  ...(v === "boolean" && fa.value !== "false"
+                                    ? { value: "true" }
+                                    : {}),
+                                })
+                              }
                             >
-                              <SelectTrigger className="w-28">
+                              <SelectTrigger className="w-32">
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="true">True</SelectItem>
-                                <SelectItem value="false">False</SelectItem>
+                                <SelectItem value="text">Text</SelectItem>
+                                <SelectItem value="number">Number</SelectItem>
+                                <SelectItem value="boolean">Boolean</SelectItem>
+                                <SelectItem value="json">JSON</SelectItem>
                               </SelectContent>
                             </Select>
-                          ) : (
-                            <Input
-                              value={fa.value}
-                              placeholder={fa.type === "json" ? '["vip","2026"]' : "Mentor LMS"}
-                              onChange={(e) =>
-                                updateFixedAttribute(fa.id, { value: e.target.value })
-                              }
-                            />
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <Button
-                            variant="ghost"
-                            size="sm-icon"
-                            tooltip="Remove"
-                            onClick={() => removeFixedAttribute(fa.id)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                          </TableCell>
+                          <TableCell>
+                            {fa.type === "boolean" ? (
+                              <Select
+                                value={fa.value === "false" ? "false" : "true"}
+                                onValueChange={(v) => updateFixedAttribute(fa.id, { value: v })}
+                              >
+                                <SelectTrigger className="w-28">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="true">True</SelectItem>
+                                  <SelectItem value="false">False</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <Input
+                                value={fa.value}
+                                placeholder={fa.type === "json" ? '["vip","2026"]' : "Mentor LMS"}
+                                onChange={(e) =>
+                                  updateFixedAttribute(fa.id, { value: e.target.value })
+                                }
+                              />
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="sm-icon"
+                              tooltip="Remove"
+                              onClick={() => removeFixedAttribute(fa.id)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableWrapper>
               )}
               <Button variant="outline" size="sm" onClick={addFixedAttribute}>
                 <Plus className="mr-1 h-4 w-4" />

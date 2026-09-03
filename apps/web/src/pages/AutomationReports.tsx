@@ -25,28 +25,22 @@ import {
   Input,
   PageContainer,
   PageHeaderWrapper,
-  Popconfirm,
+  DataTable,
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
   Skeleton,
-  Table,
-  TableBody,
-  TableCell,
   TableEmptyState,
-  TableHead,
-  TableHeader,
   TablePagination,
-  TableRow,
-  TableWrapper,
   Tabs,
   TabsContent,
   TabsList,
   TabsTrigger,
   toast,
 } from "../components/ui/index.js";
+import type { DataTableAction, DataTableColumn } from "../components/ui/index.js";
 
 function errorMessage(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
@@ -244,7 +238,7 @@ function EmailsAnalytics({ report }: { report: AutomationReport }) {
         const email = step.email!;
         return (
           <BlockLayout key={step.node_id} padding="sm">
-            <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
               <div className="min-w-0">
                 <div className="truncate font-medium">
                   {step.label}
@@ -253,7 +247,7 @@ function EmailsAnalytics({ report }: { report: AutomationReport }) {
                   )}
                 </div>
               </div>
-              <div className="flex shrink-0 gap-6 text-center">
+              <div className="grid grid-cols-2 gap-3 text-center sm:flex sm:shrink-0 sm:gap-6">
                 {[
                   ["Sent", nf.format(email.sent)],
                   ["Opened", rate(email.unique_opens, email.sent)],
@@ -356,11 +350,82 @@ function IndividualReporting({
     }
   }
 
+  const columns: DataTableColumn<AutomationEnrollment>[] = [
+    {
+      key: "contact",
+      header: "Contact",
+      mobile: "title",
+      cell: (row) => (
+        <>
+          <Link to={`/subscribers/${row.subscriber_id}`} className="text-primary hover:underline">
+            {row.name || row.email}
+          </Link>
+          {row.name && <div className="text-muted-foreground text-xs">{row.email}</div>}
+        </>
+      ),
+    },
+    {
+      key: "step",
+      header: "Current step",
+      mobile: "subtitle",
+      cell: (row) => labelOf(row.current_node_id),
+    },
+    {
+      key: "status",
+      header: "Status",
+      mobile: "status",
+      cell: (row) => <Badge status={row.status} />,
+    },
+    {
+      key: "next_run",
+      header: "Next run",
+      className: "text-muted-foreground",
+      cell: (row) => when(row.next_run_at),
+    },
+    {
+      key: "entered",
+      header: "Entered",
+      className: "text-muted-foreground",
+      cell: (row) => when(row.started_at),
+    },
+  ];
+
+  function rowActions(row: AutomationEnrollment): DataTableAction[] {
+    const actions: DataTableAction[] = [];
+    if (row.status === "active") {
+      actions.push({
+        label: "Cancel",
+        appearance: "outline",
+        onClick: () =>
+          act(
+            () => api.post(`/automations/${automationId}/enrollments/${row.id}/cancel`),
+            "Contact cancelled",
+          ),
+      });
+    }
+    actions.push({
+      label: "Remove",
+      appearance: "destructive",
+      variant: "destructive",
+      confirm: {
+        description:
+          "Remove this contact from the automation? Their history here is deleted too, so the funnel stops counting them.",
+        confirmText: "Remove",
+      },
+      onClick: () =>
+        act(
+          () => api.delete(`/automations/${automationId}/enrollments/${row.id}`),
+          "Contact removed",
+        ),
+    });
+    return actions;
+  }
+
   return (
-    <BlockLayout padding="sm">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+    <div className="space-y-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
         <h3 className="m-0 text-base font-semibold">Individual reporting</h3>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
           <Select
             value={status}
             onValueChange={(v) => {
@@ -368,7 +433,7 @@ function IndividualReporting({
               setPage(1);
             }}
           >
-            <SelectTrigger width="auto" className="w-40">
+            <SelectTrigger width="auto" className="w-full sm:w-40">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -385,87 +450,29 @@ function IndividualReporting({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search name or email"
-              className="w-56 pl-8"
+              className="w-full pl-8 sm:w-56"
             />
           </div>
         </div>
       </div>
 
-      <TableWrapper>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Contact</TableHead>
-              <TableHead>Current step</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Next run</TableHead>
-              <TableHead>Entered</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((row) => (
-              <TableRow key={row.id}>
-                <TableCell>
-                  <Link
-                    to={`/subscribers/${row.subscriber_id}`}
-                    className="text-primary hover:underline"
-                  >
-                    {row.name || row.email}
-                  </Link>
-                  {row.name && <div className="text-muted-foreground text-xs">{row.email}</div>}
-                </TableCell>
-                <TableCell>{labelOf(row.current_node_id)}</TableCell>
-                <TableCell>
-                  <Badge status={row.status} />
-                </TableCell>
-                <TableCell className="text-muted-foreground">{when(row.next_run_at)}</TableCell>
-                <TableCell className="text-muted-foreground">{when(row.started_at)}</TableCell>
-                <TableCell>
-                  <div className="flex justify-end gap-2">
-                    {row.status === "active" && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() =>
-                          act(
-                            () =>
-                              api.post(`/automations/${automationId}/enrollments/${row.id}/cancel`),
-                            "Contact cancelled",
-                          )
-                        }
-                      >
-                        Cancel
-                      </Button>
-                    )}
-                    <Popconfirm
-                      description="Remove this contact from the automation? Their history here is deleted too, so the funnel stops counting them."
-                      confirmText="Remove"
-                      onConfirm={() =>
-                        act(
-                          () => api.delete(`/automations/${automationId}/enrollments/${row.id}`),
-                          "Contact removed",
-                        )
-                      }
-                    >
-                      <Button size="sm" variant="destructive">
-                        Remove
-                      </Button>
-                    </Popconfirm>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </TableWrapper>
+      <DataTable
+        columns={columns}
+        rows={rows}
+        rowKey={(row) => row.id}
+        rowActions={rowActions}
+        empty={
+          loading ? (
+            <TableEmptyState title="Loading…" description="Fetching contacts." />
+          ) : (
+            <TableEmptyState
+              title="No contacts match"
+              description="Contacts appear here once the trigger fires for them."
+            />
+          )
+        }
+      />
 
-      {!loading && total === 0 && (
-        <TableEmptyState
-          title="No contacts match"
-          description="Contacts appear here once the trigger fires for them."
-        />
-      )}
       {total > 0 && (
         <TablePagination
           current={page}
@@ -478,7 +485,7 @@ function IndividualReporting({
           }}
         />
       )}
-    </BlockLayout>
+    </div>
   );
 }
 
@@ -504,7 +511,7 @@ export default function AutomationReports() {
         variant="title-with-actions"
         title={automation?.name ?? "Report"}
         actions={
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             {automation && <Badge status={automation.status} />}
             <Button variant="outline" size="sm" asChild>
               <Link to={`/automations/${id}`}>

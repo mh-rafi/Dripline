@@ -3,17 +3,8 @@ import { Link } from "react-router-dom";
 import { api } from "../lib/api.js";
 import type { CampaignUnsubscribe, UnsubscribeSource } from "../lib/types.js";
 import { unsubscribeReasonLabel } from "../lib/unsubscribeReasons.js";
-import {
-  Table,
-  TableHeader,
-  TableBody,
-  TableRow,
-  TableHead,
-  TableCell,
-  TableEmptyState,
-  TablePagination,
-  Tag,
-} from "./ui/index.js";
+import { DataTable, TableEmptyState, TablePagination, Tag } from "./ui/index.js";
+import type { DataTableColumn } from "./ui/index.js";
 
 const SOURCE_LABELS: Record<UnsubscribeSource, string> = {
   one_click: "One-click",
@@ -38,84 +29,87 @@ export default function CampaignUnsubscribesTable({ campaignId }: { campaignId: 
       });
   }, [campaignId, page, pageSize]);
 
+  const columns: DataTableColumn<CampaignUnsubscribe>[] = [
+    {
+      key: "subscriber",
+      header: "Subscriber",
+      mobile: "title",
+      cell: (u) => (
+        <>
+          {u.subscriber_id ? (
+            <Link to={`/subscribers/${u.subscriber_id}`} className="text-primary hover:underline">
+              {u.subscriber_email}
+            </Link>
+          ) : (
+            <span className="text-muted-foreground">deleted contact</span>
+          )}
+          {u.subscriber_name && (
+            <div className="text-muted-foreground text-xs">{u.subscriber_name}</div>
+          )}
+        </>
+      ),
+    },
+    {
+      key: "reason",
+      header: "Reason",
+      mobile: "subtitle",
+      cell: (u) =>
+        u.reason ? (
+          <>
+            {unsubscribeReasonLabel(u.reason)}
+            {u.reason_comment && (
+              <div className="text-muted-foreground line-clamp-3 text-xs" title={u.reason_comment}>
+                {u.reason_comment}
+              </div>
+            )}
+          </>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        ),
+    },
+    {
+      key: "lists",
+      header: "Lists left",
+      cell: (u) => (
+        <div className="flex flex-wrap gap-1.5">
+          {u.lists.map((l) => (
+            <Tag key={l.id}>{l.name}</Tag>
+          ))}
+          {u.list_ids.length > u.lists.length && (
+            <span className="text-muted-foreground text-xs">
+              +{u.list_ids.length - u.lists.length} deleted
+            </span>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: "via",
+      header: "Via",
+      className: "text-muted-foreground",
+      cell: (u) => SOURCE_LABELS[u.source],
+    },
+    {
+      key: "when",
+      header: "When",
+      className: "text-muted-foreground",
+      cell: (u) => new Date(u.created_at).toLocaleString(),
+    },
+  ];
+
   return (
     <div>
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Subscriber</TableHead>
-            <TableHead>Lists left</TableHead>
-            <TableHead>Reason</TableHead>
-            <TableHead>Via</TableHead>
-            <TableHead>When</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.map((u) => (
-            <TableRow key={u.id}>
-              <TableCell>
-                {u.subscriber_id ? (
-                  <Link
-                    to={`/subscribers/${u.subscriber_id}`}
-                    className="text-primary hover:underline"
-                  >
-                    {u.subscriber_email}
-                  </Link>
-                ) : (
-                  <span className="text-muted-foreground">deleted contact</span>
-                )}
-                {u.subscriber_name && (
-                  <div className="text-muted-foreground text-xs">{u.subscriber_name}</div>
-                )}
-              </TableCell>
-              <TableCell>
-                <div className="flex flex-wrap gap-1.5">
-                  {u.lists.map((l) => (
-                    <Tag key={l.id}>{l.name}</Tag>
-                  ))}
-                  {/* A list deleted since the unsubscribe has no name to show,
-                      but it still counted -- don't silently under-report. */}
-                  {u.list_ids.length > u.lists.length && (
-                    <span className="text-muted-foreground text-xs">
-                      +{u.list_ids.length - u.lists.length} deleted
-                    </span>
-                  )}
-                </div>
-              </TableCell>
-              <TableCell>
-                {u.reason ? (
-                  <>
-                    {unsubscribeReasonLabel(u.reason)}
-                    {/* Free text from a public page -- rendered as text, never
-                        as markup, and clamped so one long answer can't stretch
-                        the row. */}
-                    {u.reason_comment && (
-                      <div
-                        className="text-muted-foreground line-clamp-3 text-xs"
-                        title={u.reason_comment}
-                      >
-                        {u.reason_comment}
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <span className="text-muted-foreground">—</span>
-                )}
-              </TableCell>
-              <TableCell className="text-muted-foreground">{SOURCE_LABELS[u.source]}</TableCell>
-              <TableCell className="text-muted-foreground">
-                {new Date(u.created_at).toLocaleString()}
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-      {total === 0 && (
-        <TableEmptyState
-          title="No unsubscribes"
-          description="Nobody has unsubscribed from this campaign."
-        />
-      )}
+      <DataTable
+        columns={columns}
+        rows={rows}
+        rowKey={(u) => u.id}
+        empty={
+          <TableEmptyState
+            title="No unsubscribes"
+            description="Nobody has unsubscribed from this campaign."
+          />
+        }
+      />
       {total > 0 && (
         <TablePagination
           current={page}
