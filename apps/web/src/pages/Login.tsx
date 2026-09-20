@@ -11,6 +11,7 @@ export default function Login() {
   // Starts false so the setup affordance is never flashed on an instance that
   // already has an account -- /meta only ever turns it on.
   const [setupRequired, setSetupRequired] = useState(false);
+  const [isDemo, setIsDemo] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
@@ -19,8 +20,20 @@ export default function Login() {
 
   useEffect(() => {
     api
-      .get<{ setup_required: boolean }>("/meta")
-      .then((meta) => setSetupRequired(meta.setup_required))
+      .get<{
+        setup_required: boolean;
+        is_demo: boolean;
+        demo_email?: string;
+        demo_password?: string;
+      }>("/meta")
+      .then((meta) => {
+        setSetupRequired(meta.setup_required);
+        if (meta.is_demo && meta.demo_email && meta.demo_password) {
+          setIsDemo(true);
+          setEmail(meta.demo_email);
+          setPassword(meta.demo_password);
+        }
+      })
       .catch(() => setSetupRequired(false));
   }, []);
 
@@ -52,6 +65,11 @@ export default function Login() {
           <p className="text-muted-foreground mb-4 text-sm">
             {isSetup ? "Create the first admin account" : "Sign in"}
           </p>
+          {isDemo && !isSetup && (
+            <p className="bg-primary/10 text-primary mb-4 rounded-md px-3 py-2 text-xs">
+              Demo credentials are filled in below -- just hit Sign in.
+            </p>
+          )}
           <form onSubmit={handleSubmit} className="space-y-4">
             {isSetup && (
               <div className="space-y-2">

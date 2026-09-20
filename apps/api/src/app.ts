@@ -76,6 +76,12 @@ export function buildApp(pool: pg.Pool, db: DB, config: Config): FastifyInstance
       license: "AGPL-3.0-or-later",
       setup_required: !anyUser,
       is_demo: config.isDemo,
+      // Handed to the login page to prefill the form -- fine to expose
+      // publicly since this is the whole point of a demo, and every write is
+      // blocked regardless of who's signed in (see auth/plugin.ts).
+      ...(config.isDemo
+        ? { demo_email: config.demoAdminEmail, demo_password: config.demoAdminPassword }
+        : {}),
     };
   });
 
