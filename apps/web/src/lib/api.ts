@@ -1,3 +1,5 @@
+import { toast } from "../components/ui/feedback/toast.js";
+
 const TOKEN_KEY = "dripline_token";
 
 export function getToken(): string | null {
@@ -18,6 +20,18 @@ export class ApiError extends Error {
   }
 }
 
+// Same fixed id on every call so a user double-clicking (or several buttons
+// failing at once) collapses onto one toast instead of stacking a pile of
+// identical ones -- see the server-side gate in apps/api/src/auth/plugin.ts.
+async function throwApiError(res: Response, fallback: string): Promise<never> {
+  const body = await res.json().catch(() => ({ error: res.statusText }));
+  const message = body.error ?? fallback;
+  if (res.status === 403 && body.code === "DEMO_MODE") {
+    toast.error(message, { id: "demo-mode" });
+  }
+  throw new ApiError(res.status, message);
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken();
   const res = await fetch(`/api/v1${path}`, {
@@ -31,10 +45,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     },
   });
 
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({ error: res.statusText }));
-    throw new ApiError(res.status, body.error ?? "request failed");
-  }
+  if (!res.ok) await throwApiError(res, "request failed");
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
@@ -62,10 +73,7 @@ export const api = {
       headers: token ? { authorization: `Bearer ${token}` } : {},
       body: form,
     });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({ error: res.statusText }));
-      throw new ApiError(res.status, body.error ?? "upload failed");
-    }
+    if (!res.ok) await throwApiError(res, "upload failed");
     return res.json() as Promise<T>;
   },
   downloadBlob: async (path: string, body: unknown) => {
@@ -78,10 +86,7 @@ export const api = {
       },
       body: JSON.stringify(body),
     });
-    if (!res.ok) {
-      const errBody = await res.json().catch(() => ({ error: res.statusText }));
-      throw new ApiError(res.status, errBody.error ?? "download failed");
-    }
+    if (!res.ok) await throwApiError(res, "download failed");
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");

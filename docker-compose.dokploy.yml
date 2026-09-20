@@ -51,6 +51,9 @@ services:
       TRACKING_SECRET: ${TRACKING_SECRET:?set TRACKING_SECRET in the environment}
       TRUST_PROXY: ${TRUST_PROXY:-true}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      IS_DEMO: ${IS_DEMO:-false}
+      DEMO_ADMIN_EMAIL: ${DEMO_ADMIN_EMAIL:-demo@dripline.io}
+      DEMO_ADMIN_PASSWORD: ${DEMO_ADMIN_PASSWORD:-dripline-demo}
     # Docker's json-file driver keeps every line forever unless capped, so a
     # long-running install eventually fills the disk with request logs.
     logging:

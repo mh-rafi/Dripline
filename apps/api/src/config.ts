@@ -23,6 +23,9 @@ export interface Config {
   logLevel: string;
   sourceUrl: string;
   trustProxy: boolean | number | string;
+  isDemo: boolean;
+  demoAdminEmail: string;
+  demoAdminPassword: string;
 }
 
 const DEV_JWT_SECRET = "dev-insecure-secret-change-me";
@@ -110,5 +113,12 @@ export function loadConfig(): Config {
     // modified code has to point this at where that source is published.
     sourceUrl: process.env.SOURCE_URL ?? "https://github.com/mh-rafi/Dripline",
     trustProxy: resolveTrustProxy(),
+    // Public demo deployments: blocks every authenticated write (see
+    // auth/plugin.ts requireAuth) and seeds sample data (see services/seed.ts).
+    isDemo: process.env.IS_DEMO === "true",
+    // The account seeded so a demo has something to log in with. Only used
+    // when isDemo is true and no user yet exists -- see services/demoSeed.ts.
+    demoAdminEmail: process.env.DEMO_ADMIN_EMAIL ?? "demo@dripline.io",
+    demoAdminPassword: process.env.DEMO_ADMIN_PASSWORD ?? "dripline-demo",
   };
 }

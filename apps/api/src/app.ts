@@ -75,6 +75,7 @@ export function buildApp(pool: pg.Pool, db: DB, config: Config): FastifyInstance
       source_url: config.sourceUrl,
       license: "AGPL-3.0-or-later",
       setup_required: !anyUser,
+      is_demo: config.isDemo,
     };
   });
 

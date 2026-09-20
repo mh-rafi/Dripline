@@ -5,6 +5,7 @@ import { loadConfig } from "./config.js";
 import { createPool } from "./db.js";
 import { createKysely } from "./db/kysely.js";
 import { seed } from "./services/seed.js";
+import { seedDemo } from "./services/demoSeed.js";
 
 const config = loadConfig();
 const pool = createPool(config);
@@ -17,6 +18,13 @@ try {
       ? `dripline: seeded ${result.templatesInserted} template(s)`
       : "dripline: nothing to seed",
   );
+
+  if (config.isDemo) {
+    const demoResult = await seedDemo(db, config);
+    console.log(
+      demoResult.seeded ? "dripline: seeded demo data" : "dripline: demo data already present",
+    );
+  }
 } finally {
   await pool.end();
 }

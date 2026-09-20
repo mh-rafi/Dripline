@@ -28,11 +28,34 @@ declare module "fastify" {
   }
 }
 
+const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+// A handful of authenticated POST routes only render or export -- they never
+// write anything -- so a public demo can safely leave them on rather than
+// hiding the feature entirely. Keyed on the route's pattern (not req.url), so
+// a numeric :id doesn't have to be matched here.
+const DEMO_EXEMPT_ROUTES = new Set([
+  "/api/v1/templates/preview",
+  "/api/v1/campaigns/preview",
+  "/api/v1/automations/:id/preview",
+  "/api/v1/subscribers/export",
+]);
+
 export default fp(async function authPlugin(
   app: FastifyInstance,
   opts: { config: Config; db: DB },
 ) {
   const { config, db } = opts;
+
+  function blockedByDemoMode(req: FastifyRequest): boolean {
+    if (!config.isDemo) return false;
+    if (!MUTATING_METHODS.has(req.method)) return false;
+    return !DEMO_EXEMPT_ROUTES.has(req.routeOptions.url ?? "");
+  }
+
+  function sendDemoBlocked(reply: FastifyReply) {
+    return reply.code(403).send({ error: "Add/edit is disabled in demo mode", code: "DEMO_MODE" });
+  }
 
   await app.register(jwt, { secret: config.jwtSecret });
 
@@ -92,6 +115,7 @@ export default fp(async function authPlugin(
       }
       const user = await loadUser(row.id);
       if (!user) return reply.code(401).send({ error: "user disabled" });
+      if (blockedByDemoMode(req)) return sendDemoBlocked(reply);
       await db
         .updateTable("users")
         .set({ last_used_at: new Date() })
@@ -109,6 +133,7 @@ export default fp(async function authPlugin(
       if (issuedBeforePasswordChange(user, payload.iat)) {
         return reply.code(401).send({ error: "password changed -- sign in again" });
       }
+      if (blockedByDemoMode(req)) return sendDemoBlocked(reply);
       req.authUser = user;
       req.authMethod = "jwt";
     } catch {

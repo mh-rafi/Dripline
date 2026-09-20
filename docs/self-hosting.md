@@ -169,22 +169,46 @@ nothing and a locked-out admin has to have their password changed for them from
 
 ## Configuration
 
-| Variable          | Required            | Purpose                                                                                                     |
-| ----------------- | ------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`    | yes                 | Postgres connection string                                                                                  |
-| `APP_URL`         | yes in production   | Public base URL of this install; tracking and unsubscribe links in outgoing mail are built from it          |
-| `JWT_SECRET`      | yes in production   | Signs admin sessions. Startup fails if unset or at the dev default                                          |
-| `TRACKING_SECRET` | yes in production   | Signs open/click/unsubscribe links. Startup fails if unset or at the dev default                            |
-| `NODE_ENV`        | set to `production` | Enables the secret checks above; already set in the image                                                   |
-| `PORT`            | no (3000)           | Listen port                                                                                                 |
-| `HOST`            | no (`0.0.0.0`)      | Listen address                                                                                              |
-| `TRUST_PROXY`     | no (`false`)        | `true` behind any reverse proxy, or a hop count / comma-separated CIDR list. Compose sets it to `true`      |
-| `WEB_DIST`        | no (auto)           | Path to the built admin UI. Auto-detected at `apps/web/dist`; unset and absent means API-only               |
-| `BODY_LIMIT_MB`   | no (8)              | Max request body. CSV imports post one JSON array, so raise it (and the proxy's limit) for very large files |
-| `RUN_MIGRATIONS`  | no (`true`)         | Container only: set `false` to skip the migration run at start                                              |
+| Variable              | Required            | Purpose                                                                                                     |
+| --------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`        | yes                 | Postgres connection string                                                                                  |
+| `APP_URL`             | yes in production   | Public base URL of this install; tracking and unsubscribe links in outgoing mail are built from it          |
+| `JWT_SECRET`          | yes in production   | Signs admin sessions. Startup fails if unset or at the dev default                                          |
+| `TRACKING_SECRET`     | yes in production   | Signs open/click/unsubscribe links. Startup fails if unset or at the dev default                            |
+| `NODE_ENV`            | set to `production` | Enables the secret checks above; already set in the image                                                   |
+| `PORT`                | no (3000)           | Listen port                                                                                                 |
+| `HOST`                | no (`0.0.0.0`)      | Listen address                                                                                              |
+| `TRUST_PROXY`         | no (`false`)        | `true` behind any reverse proxy, or a hop count / comma-separated CIDR list. Compose sets it to `true`      |
+| `WEB_DIST`            | no (auto)           | Path to the built admin UI. Auto-detected at `apps/web/dist`; unset and absent means API-only               |
+| `BODY_LIMIT_MB`       | no (8)              | Max request body. CSV imports post one JSON array, so raise it (and the proxy's limit) for very large files |
+| `RUN_MIGRATIONS`      | no (`true`)         | Container only: set `false` to skip the migration run at start                                              |
+| `IS_DEMO`             | no (`false`)        | Read-only public demo mode -- see [Demo mode](#demo-mode) below                                             |
+| `DEMO_ADMIN_EMAIL`    | no                  | Login seeded when `IS_DEMO=true` and no user exists yet (default `demo@dripline.io`)                        |
+| `DEMO_ADMIN_PASSWORD` | no                  | Password for that account (default `dripline-demo` -- change it before going public)                        |
 
 Compose-only variables (`POSTGRES_PASSWORD`, `APP_DOMAIN`, `BIND_ADDRESS`,
 `DRIPLINE_VERSION`, ...) are documented in [`.env.example`](../.env.example).
+
+## Demo mode
+
+Set `IS_DEMO=true` to run a public, read-only demo -- useful for letting
+people click around without risking real data. It changes two things:
+
+- Every authenticated add/edit/delete request is rejected with a 403 before it
+  reaches the database (`requireAuth` in `apps/api/src/auth/plugin.ts`); the
+  admin UI shows a toast ("Add/edit is disabled in demo mode") when one is
+  attempted, plus a small badge in the top bar the whole time. Read-only
+  actions -- viewing, previewing a template/campaign, exporting subscribers --
+  still work.
+- On first start, if there's no data yet, it seeds a handful of sample lists,
+  subscribers and campaigns (with fabricated but realistic-looking send/open/
+  click stats) plus an admin account (`DEMO_ADMIN_EMAIL`/`DEMO_ADMIN_PASSWORD`,
+  default `demo@dripline.io` / `dripline-demo`), so visitors have something to
+  look at and a way to sign in. This runs once per database -- a no-op on
+  restart, or on an install that already has lists.
+
+Change `DEMO_ADMIN_PASSWORD` before pointing a demo at the public internet;
+sign-in still works normally, only writes are blocked.
 
 ## Upgrading
 

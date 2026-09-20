@@ -45,21 +45,13 @@ interface Meta {
   version: string;
   source_url: string;
   license: string;
+  is_demo: boolean;
 }
 
 // AGPL-3.0 section 13 requires that users interacting with a network-deployed
 // modified version are offered its corresponding source. The API reports where
 // that is (SOURCE_URL), so a fork only has to set the env var.
-function SourceLink() {
-  const [meta, setMeta] = useState<Meta | null>(null);
-
-  useEffect(() => {
-    api
-      .get<Meta>("/meta")
-      .then(setMeta)
-      .catch(() => setMeta(null));
-  }, []);
-
+function SourceLink({ meta }: { meta: Meta | null }) {
   if (!meta) return null;
   return (
     <a
@@ -131,6 +123,14 @@ export default function Layout() {
     () => localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true",
   );
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [meta, setMeta] = useState<Meta | null>(null);
+
+  useEffect(() => {
+    api
+      .get<Meta>("/meta")
+      .then(setMeta)
+      .catch(() => setMeta(null));
+  }, []);
 
   useEffect(() => {
     localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(collapsed));
@@ -192,7 +192,7 @@ export default function Layout() {
             {user?.email}
           </div>
           <div className="group-data-[collapsed=true]:hidden">
-            <SourceLink />
+            <SourceLink meta={meta} />
           </div>
           <ThemeToggle />
           <Button
@@ -234,6 +234,11 @@ export default function Layout() {
           >
             <PanelLeft className="h-4 w-4" />
           </Button>
+          {meta?.is_demo && (
+            <span className="bg-primary/10 text-primary ml-2 rounded-full px-2.5 py-0.5 text-xs font-medium">
+              Demo mode -- changes aren't saved
+            </span>
+          )}
         </div>
         <main className="bg-background flex-1 overflow-auto">
           <div className="mx-auto max-w-[1200px] px-4 py-6 sm:px-6 md:px-8 md:py-10">
