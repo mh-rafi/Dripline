@@ -574,3 +574,31 @@ mail clients and security scanners, so counting requests rather than departures 
 inflate the number. Rows are created going forward only -- unsubscribes predating this
 table are not backfilled, and there is no way to reconstruct them, since
 `subscriber_lists` holds current state with no campaign attribution.
+
+## MCP (Model Context Protocol)
+
+`POST /mcp` (outside `/api/v1`) is a stateless Streamable HTTP MCP endpoint, so
+an AI client can drive the instance directly. Authenticate exactly like the REST
+API -- an API user's `dk_...` token or a session JWT in
+`Authorization: Bearer <token>`. `GET`/`DELETE` return 405.
+
+```json
+{
+  "mcpServers": {
+    "dripline": {
+      "type": "http",
+      "url": "https://your-domain/mcp",
+      "headers": { "Authorization": "Bearer dk_xxx_xxx" }
+    }
+  }
+}
+```
+
+Every tool replays the caller's own token against the matching REST route
+in-process (`apps/api/src/routes/mcp.ts`), so roles, validation and errors are
+identical to the REST API. Give the token a narrow role. Tools: `list_lists`,
+`list_subscribers`, `get_subscriber`, `list_campaigns`, `get_campaign`,
+`get_campaign_analytics`, `list_templates`, `list_connections`,
+`list_automations` (read-only); `create_list`, `add_subscriber`,
+`create_campaign` (draft only), `send_test_email`, `start_campaign`,
+`pause_campaign`. `/mcp` is not available when `IS_DEMO=true`.

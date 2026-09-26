@@ -23,6 +23,7 @@ import bounceRoutes from "./routes/bounces.js";
 import trackingRoutes from "./routes/tracking.js";
 import mediaRoutes from "./routes/media.js";
 import settingsRoutes from "./routes/settings.js";
+import mcpRoutes from "./routes/mcp.js";
 
 export function buildApp(pool: pg.Pool, db: DB, config: Config): FastifyInstance {
   // Fastify's types omit the hop-count form of trustProxy that proxy-addr (and
@@ -98,6 +99,7 @@ export function buildApp(pool: pg.Pool, db: DB, config: Config): FastifyInstance
   app.register(trackingRoutes, { db, config });
   app.register(mediaRoutes, { db });
   app.register(settingsRoutes, { db });
+  app.register(mcpRoutes);
 
   // When a built admin UI is present this process serves it too, so a whole
   // install is one origin and one port -- which APP_URL depends on, since
