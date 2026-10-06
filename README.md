@@ -6,6 +6,7 @@ Open-source, self-hosted email campaigns, drip automation, and multi-provider se
 - [Development Plan](docs/plan/DEVELOPMENT_PLAN.md)
 - [Self-hosting guide](docs/self-hosting.md)
 - [API reference](docs/api-reference.md)
+- [MCP server](docs/mcp.md)
 - [Contributing](CONTRIBUTING.md)
 
 ## Status

@@ -11,6 +11,8 @@ Vite, Tailwind v4 + shadcn/ui, light/dark/system theming).
   Start here, then open the specific phase file you need — each is kept
   current with what's actually been built and verified, not just planned.
 - [docs/api-reference.md](docs/api-reference.md) — every endpoint's shape.
+- [docs/mcp.md](docs/mcp.md) — the `/mcp` endpoint; each tool wraps a REST route
+  (`apps/api/src/routes/mcp.ts`), so keep it in sync when routes change.
 - [docs/plan/automations_v2.md](docs/plan/automations_v2.md) — the node-graph
   automation builder that replaces Phases 4/5. Phase 1 built & verified;
   Phases 2–4 (remaining actions, conditional branching, reporting) planned.

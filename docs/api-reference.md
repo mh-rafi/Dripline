@@ -601,4 +601,4 @@ identical to the REST API. Give the token a narrow role. Tools: `list_lists`,
 `get_campaign_analytics`, `list_templates`, `list_connections`,
 `list_automations` (read-only); `create_list`, `add_subscriber`,
 `create_campaign` (draft only), `send_test_email`, `start_campaign`,
-`pause_campaign`. `/mcp` is not available when `IS_DEMO=true`.
+`pause_campaign`. `/mcp` is not available when `IS_DEMO=true`. Full guide: [mcp.md](mcp.md).
