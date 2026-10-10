@@ -143,6 +143,16 @@ export interface BounceMailboxConfig {
   max_messages_per_scan: number;
 }
 
+/** Per-connection provider-API bounce polling -- see src/bounceProviders/.
+ * `provider` is a registry key (deliberately not a DB enum), and `settings`
+ * is whatever that provider's field descriptors declare, secrets included. */
+export interface BouncePollConfig {
+  enabled: boolean;
+  provider: string;
+  lookback_days: number;
+  settings: Record<string, unknown>;
+}
+
 export interface ConnectionsTable {
   id: Generated<number>;
   name: string;
@@ -171,6 +181,10 @@ export interface ConnectionsTable {
   bounce_last_uidvalidity: string | null;
   bounce_error_count: Generated<number>;
   bounce_disabled_reason: string | null;
+  bounce_poll_config: BouncePollConfig | null;
+  bounce_poll_error_count: Generated<number>;
+  bounce_poll_disabled_reason: string | null;
+  bounce_poll_last_run_at: Timestamp | null;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
 }
@@ -411,6 +425,9 @@ export interface BouncesTable {
   type: BounceType;
   source: Generated<string>;
   meta: Generated<Record<string, unknown>>;
+  /** Set by polling sources so re-reading the same provider log entry is a
+   * no-op. Unique; null for webhook and mailbox-scan bounces. */
+  dedupe_key: string | null;
   created_at: Generated<Timestamp>;
 }
 

@@ -3,7 +3,7 @@ import { simpleParser } from "mailparser";
 import type { Selectable } from "kysely";
 import type { DB } from "../db/kysely.js";
 import type { BounceType, ConnectionsTable, SmtpConnectionConfig } from "../db/types.js";
-import { recordBounce } from "./bounces.js";
+import { recordBounceByReference } from "./bounces.js";
 
 type Connection = Selectable<ConnectionsTable>;
 
@@ -232,44 +232,16 @@ export async function parseReport(raw: Buffer): Promise<ParsedReport | null> {
 }
 
 /** Resolves a parsed bounce or complaint to a subscriber/campaign and records
- * it via the existing recordBounce() -- Message-ID match first (exact
- * subscriber + campaign), recipient-address fallback second (subscriber only,
- * campaign_id: null). No match at all: silently dropped, same as an
- * unrecognized message. A complaint blocklists on the first occurrence
- * (COMPLAINT_THRESHOLD in services/bounces.ts). */
+ * it -- see recordBounceByReference for the two-tier match. A complaint
+ * blocklists on the first occurrence (COMPLAINT_THRESHOLD in
+ * services/bounces.ts). */
 async function resolveAndRecordReport(db: DB, parsed: ParsedReport): Promise<void> {
-  if (parsed.messageId) {
-    const row = await db
-      .selectFrom("campaign_emails")
-      .select(["subscriber_id", "campaign_id"])
-      .where("message_id", "=", parsed.messageId)
-      .executeTakeFirst();
-    if (row) {
-      await recordBounce(db, {
-        subscriberId: row.subscriber_id,
-        campaignId: row.campaign_id,
-        type: parsed.type,
-        source: "mailbox-scan",
-      });
-      return;
-    }
-  }
-
-  if (parsed.recipientEmail) {
-    const subscriber = await db
-      .selectFrom("subscribers")
-      .select("id")
-      .where("email", "=", parsed.recipientEmail)
-      .executeTakeFirst();
-    if (subscriber) {
-      await recordBounce(db, {
-        subscriberId: subscriber.id,
-        campaignId: null,
-        type: parsed.type,
-        source: "mailbox-scan",
-      });
-    }
-  }
+  await recordBounceByReference(db, {
+    messageId: parsed.messageId,
+    recipientEmail: parsed.recipientEmail,
+    type: parsed.type,
+    source: "mailbox-scan",
+  });
 }
 
 // ---- scan --------------------------------------------------------------------

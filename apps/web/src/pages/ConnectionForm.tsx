@@ -1,7 +1,13 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../lib/api.js";
-import type { AuthMethod, Connection, ConnectionType, TlsMode } from "../lib/types.js";
+import type {
+  AuthMethod,
+  BounceProvider,
+  Connection,
+  ConnectionType,
+  TlsMode,
+} from "../lib/types.js";
 import DurationInput from "../components/DurationInput.js";
 import {
   PageHeaderWrapper,
@@ -62,7 +68,15 @@ interface FormState {
   bounce_folder: string;
   bounce_max_age_days: number;
   bounce_max_messages_per_scan: number;
+  poll_enabled: boolean;
+  poll_provider: string;
+  poll_lookback_days: number;
+  poll_settings: Record<string, string>;
+  poll_last_run_at: string | null;
+  poll_disabled_reason: string | null;
 }
+
+const MASKED = "••••••••";
 
 const EMPTY_FORM: FormState = {
   name: "",
@@ -95,6 +109,12 @@ const EMPTY_FORM: FormState = {
   bounce_folder: "INBOX",
   bounce_max_age_days: 7,
   bounce_max_messages_per_scan: 200,
+  poll_enabled: false,
+  poll_provider: "",
+  poll_lookback_days: 3,
+  poll_settings: {},
+  poll_last_run_at: null,
+  poll_disabled_reason: null,
 };
 
 function formFromConnection(c: Connection): FormState {
@@ -133,6 +153,28 @@ function formFromConnection(c: Connection): FormState {
     bounce_folder: c.bounce_config?.folder ?? "INBOX",
     bounce_max_age_days: c.bounce_config?.max_age_days ?? 7,
     bounce_max_messages_per_scan: c.bounce_config?.max_messages_per_scan ?? 200,
+    poll_enabled: c.bounce_poll_config?.enabled ?? false,
+    poll_provider: c.bounce_poll_config?.provider ?? "",
+    poll_lookback_days: c.bounce_poll_config?.lookback_days ?? 3,
+    // Secrets arrive masked; blank them so an untouched field is sent as
+    // empty, which the API reads as "keep the stored value".
+    poll_settings: Object.fromEntries(
+      Object.entries(c.bounce_poll_config?.settings ?? {}).map(([key, value]) => [
+        key,
+        value === MASKED || value == null ? "" : String(value),
+      ]),
+    ),
+    poll_last_run_at: c.bounce_poll_last_run_at,
+    poll_disabled_reason: c.bounce_poll_disabled_reason,
+  };
+}
+
+function buildBouncePollConfig(form: FormState) {
+  return {
+    enabled: form.poll_enabled,
+    provider: form.poll_provider || undefined,
+    lookback_days: Number(form.poll_lookback_days),
+    settings: form.poll_settings,
   };
 }
 
@@ -190,6 +232,9 @@ export default function ConnectionForm() {
   const [testResult, setTestResult] = useState<TestState | null>(null);
   const [bounceTesting, setBounceTesting] = useState(false);
   const [bounceTestResult, setBounceTestResult] = useState<TestState | null>(null);
+  const [providers, setProviders] = useState<BounceProvider[]>([]);
+  const [pollTesting, setPollTesting] = useState(false);
+  const [pollTestResult, setPollTestResult] = useState<TestState | null>(null);
 
   useEffect(() => {
     if (!editing) return;
@@ -198,6 +243,19 @@ export default function ConnectionForm() {
       setLoaded(true);
     });
   }, [id, editing]);
+
+  useEffect(() => {
+    api
+      .get<BounceProvider[]>("/bounce-providers")
+      .then(setProviders)
+      .catch(() => setProviders([]));
+  }, []);
+
+  const selectedProvider = providers.find((p) => p.key === form.poll_provider);
+
+  function setPollSetting(key: string, value: string) {
+    setForm((f) => ({ ...f, poll_settings: { ...f.poll_settings, [key]: value } }));
+  }
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -250,12 +308,33 @@ export default function ConnectionForm() {
     }
   }
 
+  async function testPollConnection() {
+    setPollTesting(true);
+    setPollTestResult(null);
+    try {
+      const payload = { bounce_poll_config: buildBouncePollConfig(form) };
+      const result =
+        form.id !== undefined
+          ? await api.post<TestState>(`/connections/${form.id}/bounce-poll-test`, payload)
+          : await api.post<TestState>("/connections/bounce-poll-test", payload);
+      setPollTestResult(result);
+    } catch (err) {
+      setPollTestResult({
+        ok: false,
+        error: err instanceof Error ? err.message : "test failed",
+      });
+    } finally {
+      setPollTesting(false);
+    }
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setSaving(true);
     const config = buildConfig(form);
     const bounce_config = buildBounceConfig(form);
+    const bounce_poll_config = buildBouncePollConfig(form);
     const rate_limit_count = form.rate_limit_count ? Number(form.rate_limit_count) : null;
     const rate_limit_duration_seconds = form.rate_limit_duration_seconds;
     try {
@@ -270,6 +349,7 @@ export default function ConnectionForm() {
           list_unsubscribe_header: form.list_unsubscribe_header,
           config,
           bounce_config,
+          bounce_poll_config,
         });
         toast.success("Connection updated");
       } else {
@@ -284,6 +364,7 @@ export default function ConnectionForm() {
           list_unsubscribe_header: form.list_unsubscribe_header,
           config,
           bounce_config,
+          bounce_poll_config,
         });
         toast.success("Connection created");
       }
@@ -310,6 +391,7 @@ export default function ConnectionForm() {
             <TabsList>
               <TabsTrigger value="sending">Sending</TabsTrigger>
               <TabsTrigger value="bounce">Bounce mailbox</TabsTrigger>
+              <TabsTrigger value="poll">API polling</TabsTrigger>
             </TabsList>
 
             <TabsContent value="sending" className="space-y-4">
@@ -758,6 +840,130 @@ export default function ConnectionForm() {
                         {bounceTestResult.ok
                           ? "Mailbox reachable"
                           : `Failed: ${bounceTestResult.error}`}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="poll" className="space-y-4">
+              <div className="flex items-center gap-3">
+                <Switch
+                  checked={form.poll_enabled}
+                  onCheckedChange={(v) => set("poll_enabled", v === true)}
+                />
+                <span className="text-sm">Poll the provider's API for failed deliveries</span>
+              </div>
+              <p className="text-muted-foreground text-xs">
+                For senders with neither bounce webhooks nor a mailbox to scan. Every few minutes
+                the provider's delivery log is read for messages it failed to deliver, and
+                subscribers that hard-bounce are blocklisted. Read-only: nothing is changed at the
+                provider.
+              </p>
+
+              {form.poll_enabled && (
+                <div className="border-border space-y-4 rounded-md border p-4">
+                  {form.poll_disabled_reason && (
+                    <Alert variant="destructive">
+                      Polling is failing: {form.poll_disabled_reason}
+                    </Alert>
+                  )}
+
+                  <div className="space-y-2">
+                    <FormLabel required>Provider</FormLabel>
+                    <Select
+                      value={form.poll_provider}
+                      onValueChange={(v) => {
+                        set("poll_provider", v);
+                        set("poll_settings", {});
+                        setPollTestResult(null);
+                      }}
+                    >
+                      <SelectTrigger className="max-w-[320px]">
+                        <SelectValue placeholder="Choose a provider" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {providers.map((p) => (
+                          <SelectItem key={p.key} value={p.key}>
+                            {p.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {selectedProvider && (
+                      <p className="text-muted-foreground text-xs">
+                        {selectedProvider.description}
+                      </p>
+                    )}
+                  </div>
+
+                  {selectedProvider?.fields.map((field) => (
+                    <div key={field.key} className="space-y-2">
+                      <FormLabel required={field.required && !editing}>
+                        {field.label}{" "}
+                        {editing && field.type === "password" && (
+                          <span className="text-muted-foreground font-normal">
+                            (leave blank to keep current)
+                          </span>
+                        )}
+                      </FormLabel>
+                      <Input
+                        type={field.type === "password" ? "password" : field.type}
+                        className="max-w-[420px]"
+                        required={field.required && !(editing && field.type === "password")}
+                        value={form.poll_settings[field.key] ?? ""}
+                        onChange={(e) => setPollSetting(field.key, e.target.value)}
+                        placeholder={
+                          editing && field.type === "password" ? MASKED : field.placeholder
+                        }
+                      />
+                      {field.help && <p className="text-muted-foreground text-xs">{field.help}</p>}
+                    </div>
+                  ))}
+
+                  {selectedProvider && (
+                    <div className="space-y-2">
+                      <FormLabel>Look back (days)</FormLabel>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={30}
+                        className="max-w-[160px]"
+                        value={form.poll_lookback_days}
+                        onChange={(e) => set("poll_lookback_days", Number(e.target.value))}
+                      />
+                      <p className="text-muted-foreground text-xs">
+                        How far back each poll reads. A message can fail days after it was accepted,
+                        so this should cover how long the provider keeps retrying. Failures already
+                        seen are never counted twice.
+                      </p>
+                    </div>
+                  )}
+
+                  {form.poll_last_run_at && (
+                    <p className="text-muted-foreground text-xs">
+                      Last polled {new Date(form.poll_last_run_at).toLocaleString()}.
+                    </p>
+                  )}
+
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={pollTesting || !selectedProvider}
+                      onClick={testPollConnection}
+                    >
+                      {pollTesting ? "Testing…" : "Test API access"}
+                    </Button>
+                    {pollTestResult && (
+                      <span
+                        className={
+                          pollTestResult.ok ? "text-success text-sm" : "text-destructive text-sm"
+                        }
+                      >
+                        {pollTestResult.ok ? "API reachable" : `Failed: ${pollTestResult.error}`}
                       </span>
                     )}
                   </div>

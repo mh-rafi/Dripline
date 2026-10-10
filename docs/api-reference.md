@@ -291,6 +291,52 @@ outgoing sends through that connection carry an envelope-from (Return-Path)
 override pointing at `bounce_config.email`, so DSNs actually route there --
 not guaranteed to be honored by every SMTP provider.
 
+### Bounce API polling
+
+For senders with neither a bounce webhook nor a mailbox to scan -- Mail.Baby
+is the first. Per connection, `connections.bounce_poll_config` makes Dripline
+read the provider's delivery log over its API every 5 minutes and record failed
+deliveries through the same `recordBounce()` as the other two paths (hard
+bounces blocklist on the first occurrence; soft ones after five):
+
+```ts
+{
+  enabled: boolean;
+  provider: string; // a key from GET /bounce-providers
+  lookback_days: number; // 1-30, default 3 -- how far back each poll reads
+  settings: Record<string, unknown>; // the provider's own fields
+}
+```
+
+`GET /bounce-providers` lists what can be chosen, each with `fields`
+(`{ key, label, type: "text" | "password" | "number", required?, placeholder?,
+help? }`) -- the admin UI builds the form from these, so a provider added to
+`apps/api/src/bounceProviders/` appears with no UI change. `password` fields are
+masked on read and an empty value on `PATCH` keeps the stored one; an empty
+non-secret field clears it. Changing `provider` discards the old provider's
+settings. `POST /connections/:id/bounce-poll-test` and
+`POST /connections/bounce-poll-test` (unsaved draft) take
+`{ bounce_poll_config }` and make one authenticated read-only call; like the
+other test endpoints, an omitted secret falls back to the stored one.
+
+Correlation is Message-ID first (exact subscriber and campaign), recipient
+address second (subscriber only). The poll re-reads the same window every tick
+rather than keeping a cursor, because a log row's status changes in place;
+`bounces.dedupe_key` makes that idempotent. Five consecutive failures set
+`bounce_poll_config.enabled` to `false` and fill `bounce_poll_disabled_reason`;
+saving the config re-arms it. Sending is never affected.
+
+**Mail.Baby** (`provider: "mailbaby"`, `GET /mail/log?delivered=0`, `X-API-KEY`):
+settings are `api_key` (required) and `order_id` (optional; blank means the
+account's first active order). A row is a bounce only on a definite SMTP failure:
+a `5xx` is `hard`, except a `5.7.x` policy/reputation rejection, which is `soft`
+so one blocked sending IP can't blocklist a whole domain. A `4xx` is the relay
+still retrying and is ignored until the row is over 24 hours old, then counts
+as `soft`. Rows with no response code yet are ignored, and so are rejections
+the relay issues itself (response mentions `mail.baby`, e.g. its SPF check) --
+those say nothing about the recipient. In the log, `delivered` is `1` delivered,
+`0` failed and `2` still deferring, though the API docs only list 0 and 1.
+
 `POST /templates/preview` -- `{ body }` → `{ html }`. Renders the given
 (possibly unsaved) template body with sample content standing in for
 `{{ Body }}`, so a template can be previewed on its own without a real

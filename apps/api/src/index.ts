@@ -18,6 +18,11 @@ import {
   registerBounceScanWorker,
   scheduleBounceScan,
 } from "./jobs/bounceScan.js";
+import {
+  registerBouncePollConnectionWorker,
+  registerBouncePollWorker,
+  scheduleBouncePoll,
+} from "./jobs/bouncePoll.js";
 
 const config = loadConfig();
 const pool = createPool(config);
@@ -30,9 +35,12 @@ await registerAutomationScanWorker(boss, db);
 await registerAutomationStepWorker(boss, db, config);
 await registerBounceScanWorker(boss, db);
 await registerBounceScanConnectionWorker(boss, db);
+await registerBouncePollWorker(boss, db);
+await registerBouncePollConnectionWorker(boss, db);
 await scheduleCampaignScan(boss);
 await scheduleAutomationScan(boss);
 await scheduleBounceScan(boss);
+await scheduleBouncePoll(boss);
 
 const app = buildApp(pool, db, config);
 

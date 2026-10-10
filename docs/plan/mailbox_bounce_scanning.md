@@ -18,6 +18,10 @@ corrections made during implementation:
    `username`/`password` remain IMAP-login-only. Required whenever
    `use_sending_credentials` is false, alongside username/password.
 
+**See also:** for providers with no mailbox either, provider-API polling is a
+third ingestion path into the same `recordBounce()` --
+[api-reference.md](../api-reference.md#bounce-api-polling).
+
 **Depends on:** Phase 3 (connections) and the already-built webhook bounce
 path (`POST /api/v1/bounces`, `services/bounces.ts::recordBounce`) — this
 plan adds a second _ingestion_ path into that same `recordBounce()`, it does

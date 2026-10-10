@@ -68,6 +68,31 @@ export interface BounceMailboxConfig {
   max_messages_per_scan: number;
 }
 
+export interface BouncePollConfig {
+  enabled: boolean;
+  provider: string;
+  lookback_days: number;
+  /** Secret fields come back masked ("••••••••"), never the stored value. */
+  settings: Record<string, unknown>;
+}
+
+/** One setting a bounce provider needs; the form renders itself from these. */
+export interface BounceProviderField {
+  key: string;
+  label: string;
+  type: "text" | "password" | "number";
+  required?: boolean;
+  placeholder?: string;
+  help?: string;
+}
+
+export interface BounceProvider {
+  key: string;
+  label: string;
+  description: string;
+  fields: BounceProviderField[];
+}
+
 export interface Connection {
   id: number;
   name: string;
@@ -85,6 +110,10 @@ export interface Connection {
   bounce_config: BounceMailboxConfig | null;
   bounce_error_count: number;
   bounce_disabled_reason: string | null;
+  bounce_poll_config: BouncePollConfig | null;
+  bounce_poll_error_count: number;
+  bounce_poll_disabled_reason: string | null;
+  bounce_poll_last_run_at: string | null;
   config: ConnectionConfig & Record<string, unknown>;
 }
 

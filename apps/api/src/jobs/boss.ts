@@ -8,6 +8,8 @@ export const QUEUES = {
   AUTOMATION_STEP: "automation.step",
   BOUNCE_SCAN: "bounce.scan",
   BOUNCE_SCAN_CONNECTION: "bounce.scan-connection",
+  BOUNCE_POLL: "bounce.poll",
+  BOUNCE_POLL_CONNECTION: "bounce.poll-connection",
 } as const;
 
 /** Queues retired by the automations v2 rewrite. An install created before it

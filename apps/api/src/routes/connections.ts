@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { DB } from "../db/kysely.js";
 import type {
   BounceMailboxConfig,
+  BouncePollConfig,
   ConnectionConfig,
   ConnectionType,
   SesConnectionConfig,
@@ -11,6 +12,11 @@ import type {
 import { BadRequestError, NotFoundError } from "../lib/errors.js";
 import { createSender, type Connection, invalidateSender } from "../services/connections.js";
 import { resolveBounceMailbox, testBounceMailbox } from "../services/bounceScanner.js";
+import {
+  getBounceProvider,
+  listBounceProviders,
+  validateProviderSettings,
+} from "../bounceProviders/index.js";
 
 const TlsMode = z.enum(["none", "starttls", "tls"]);
 const AuthMethod = z.enum(["none", "login", "plain", "cram-md5"]);
@@ -76,6 +82,17 @@ const BounceConfig = z.object({
   max_messages_per_scan: z.number().int().positive().optional(),
 });
 
+// Provider API polling -- see src/bounceProviders/. `settings` is validated
+// against the chosen provider's own field descriptors (mergePollConfig and
+// assertPollConfigValid below), not here, because its shape is the provider's.
+// Fields are plain `.optional()` for the same reason BounceConfig's are.
+const BouncePollPatch = z.object({
+  enabled: z.boolean().optional(),
+  provider: z.string().min(1).optional(),
+  lookback_days: z.number().int().min(1).max(30).optional(),
+  settings: z.record(z.string(), z.unknown()).optional(),
+});
+
 function validateBounceConfig(
   type: "smtp" | "ses",
   bounceConfig: z.infer<typeof BounceConfig> | undefined,
@@ -130,6 +147,7 @@ const CreateConnection = z
     list_unsubscribe_header: z.boolean().default(true),
     config: z.unknown(),
     bounce_config: BounceConfig.optional(),
+    bounce_poll_config: BouncePollPatch.optional(),
   })
   .superRefine((body, ctx) => {
     const result =
@@ -161,6 +179,7 @@ const UpdateConnection = z.object({
   list_unsubscribe_header: z.boolean().optional(),
   config: z.unknown().optional(),
   bounce_config: BounceConfig.optional(),
+  bounce_poll_config: BouncePollPatch.optional(),
 });
 
 const TestConnection = z.object({
@@ -191,6 +210,10 @@ type ConnectionRow = {
   bounce_last_uidvalidity: string | null;
   bounce_error_count: number;
   bounce_disabled_reason: string | null;
+  bounce_poll_config: BouncePollConfig | null;
+  bounce_poll_error_count: number;
+  bounce_poll_disabled_reason: string | null;
+  bounce_poll_last_run_at: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -205,7 +228,84 @@ function mask<T extends ConnectionRow>(row: T): T {
   const bounceConfig = row.bounce_config
     ? { ...row.bounce_config, password: row.bounce_config.password ? "••••••••" : "" }
     : null;
-  return { ...row, config: config as unknown as ConnectionConfig, bounce_config: bounceConfig };
+  return {
+    ...row,
+    config: config as unknown as ConnectionConfig,
+    bounce_config: bounceConfig,
+    bounce_poll_config: maskPollConfig(row.bounce_poll_config),
+  };
+}
+
+const MASK = "••••••••";
+
+function maskPollConfig(config: BouncePollConfig | null): BouncePollConfig | null {
+  if (!config) return null;
+  const provider = getBounceProvider(config.provider);
+  const settings = { ...config.settings };
+  for (const [key, value] of Object.entries(settings)) {
+    // A provider no longer in the registry can't say which of its values are
+    // secrets, so none are shown.
+    const secret = provider
+      ? provider.fields.find((f) => f.key === key)?.type === "password"
+      : true;
+    if (secret && value) settings[key] = MASK;
+  }
+  return { ...config, settings };
+}
+
+/** Applies a patch onto the saved poll config. Which keys exist, and which of
+ * them are secrets, comes from the provider's field descriptors: an empty
+ * secret means "keep the stored one" (the UI blanks masked fields), while an
+ * empty non-secret clears it. Switching provider starts from empty settings --
+ * another provider's API key is not this one's. */
+function mergePollConfig(
+  existing: BouncePollConfig | null,
+  patch: z.infer<typeof BouncePollPatch> | undefined,
+): BouncePollConfig | null {
+  if (!patch) return existing;
+  const provider = patch.provider ?? existing?.provider ?? "";
+  const def = getBounceProvider(provider);
+  const settings: Record<string, unknown> =
+    existing?.provider === provider ? { ...existing.settings } : {};
+
+  for (const field of def?.fields ?? []) {
+    if (!patch.settings || !(field.key in patch.settings)) continue;
+    const value = patch.settings[field.key];
+    const empty = value === undefined || value === null || value === "";
+    if (empty) {
+      if (field.type !== "password") delete settings[field.key];
+      continue;
+    }
+    settings[field.key] = field.type === "number" ? Number(value) : value;
+  }
+
+  return {
+    enabled: patch.enabled ?? existing?.enabled ?? false,
+    provider,
+    lookback_days: patch.lookback_days ?? existing?.lookback_days ?? 3,
+    settings,
+  };
+}
+
+function assertPollConfigValid(config: BouncePollConfig | null): void {
+  if (!config?.enabled) return;
+  const provider = getBounceProvider(config.provider);
+  if (!provider) throw new BadRequestError("bounce_poll_config.provider is not a known provider");
+  const problem = validateProviderSettings(provider, config.settings);
+  if (problem) throw new BadRequestError(`bounce_poll_config: ${problem}`);
+}
+
+async function testPollConfig(config: BouncePollConfig | null) {
+  const provider = config ? getBounceProvider(config.provider) : undefined;
+  if (!config || !provider) return { ok: false, error: "choose a provider first" };
+  const problem = validateProviderSettings(provider, config.settings);
+  if (problem) return { ok: false, error: problem };
+  try {
+    await provider.verify(config.settings);
+    return { ok: true, error: null };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
 }
 
 /** Same "empty value means keep the existing secret" rule as mergeConfig
@@ -296,6 +396,9 @@ export default async function connectionRoutes(app: FastifyInstance, opts: { db:
       const config =
         body.type === "ses" ? SesConfig.parse(body.config) : SmtpConfig.parse(body.config);
 
+      const pollConfig = mergePollConfig(null, body.bounce_poll_config);
+      assertPollConfigValid(pollConfig);
+
       const row = await db
         .insertInto("connections")
         .values({
@@ -311,6 +414,7 @@ export default async function connectionRoutes(app: FastifyInstance, opts: { db:
           rate_limit_duration_seconds: body.rate_limit_duration_seconds ?? null,
           list_unsubscribe_header: body.list_unsubscribe_header,
           bounce_config: mergeBounceConfig(null, body.bounce_config),
+          bounce_poll_config: pollConfig,
         })
         .returningAll()
         .executeTakeFirstOrThrow();
@@ -382,6 +486,17 @@ export default async function connectionRoutes(app: FastifyInstance, opts: { db:
           }
         }
         set.bounce_config = merged;
+      }
+
+      if (body.bounce_poll_config !== undefined) {
+        const merged = mergePollConfig(existing.bounce_poll_config, body.bounce_poll_config);
+        assertPollConfigValid(merged);
+        set.bounce_poll_config = merged;
+        // A deliberate save is the user's way of re-arming a poll that
+        // auto-disabled itself; carrying the old failure count over would
+        // disable it again after one more error.
+        set.bounce_poll_error_count = 0;
+        set.bounce_poll_disabled_reason = null;
       }
 
       const row = await db
@@ -549,6 +664,49 @@ export default async function connectionRoutes(app: FastifyInstance, opts: { db:
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) };
       }
+    },
+  );
+
+  // What the API-polling tab offers. Fields are descriptors, so a provider
+  // added to bounceProviders/ shows up here with its form already described.
+  app.get(
+    "/api/v1/bounce-providers",
+    { preHandler: app.requirePermission("connections:get") },
+    async () =>
+      listBounceProviders().map(({ key, label, description, fields }) => ({
+        key,
+        label,
+        description,
+        fields,
+      })),
+  );
+
+  const PollTestBody = z.object({ bounce_poll_config: BouncePollPatch });
+
+  // Tests a saved connection's poll config with unsaved edits on top, so a
+  // masked-out API key still falls back to the stored one.
+  app.post(
+    "/api/v1/connections/:id/bounce-poll-test",
+    { preHandler: app.requirePermission("connections:manage") },
+    async (req) => {
+      const { id } = z.object({ id: z.coerce.number() }).parse(req.params);
+      const body = PollTestBody.parse(req.body);
+      const row = await db
+        .selectFrom("connections")
+        .select("bounce_poll_config")
+        .where("id", "=", id)
+        .executeTakeFirst();
+      if (!row) throw new NotFoundError("connection");
+      return testPollConfig(mergePollConfig(row.bounce_poll_config, body.bounce_poll_config));
+    },
+  );
+
+  app.post(
+    "/api/v1/connections/bounce-poll-test",
+    { preHandler: app.requirePermission("connections:manage") },
+    async (req) => {
+      const body = PollTestBody.parse(req.body);
+      return testPollConfig(mergePollConfig(null, body.bounce_poll_config));
     },
   );
 }

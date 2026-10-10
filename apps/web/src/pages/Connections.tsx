@@ -108,6 +108,18 @@ export default function Connections() {
               {c.bounce_disabled_reason ? "bounce scan error" : "bounce scan on"}
             </span>
           )}
+          {c.bounce_poll_config?.enabled && (
+            <span
+              className={
+                c.bounce_poll_disabled_reason
+                  ? "bg-destructive/15 text-destructive ml-1 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium"
+                  : "bg-success/15 text-success ml-1 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium"
+              }
+              title={c.bounce_poll_disabled_reason ?? "Bounce API polling is active"}
+            >
+              {c.bounce_poll_disabled_reason ? "api poll error" : "api poll on"}
+            </span>
+          )}
         </>
       ),
     },
